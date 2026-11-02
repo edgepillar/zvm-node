@@ -137,12 +137,12 @@ func uriHistoryDump(t *testing.T, db *sql.DB) string {
 			t.Fatal(err)
 		}
 		var values []string
+		value := make([]any, len(columns))
+		args := make([]any, len(columns))
+		for i := range value {
+			args[i] = &value[i]
+		}
 		for rows.Next() {
-			value := make([]any, len(columns))
-			args := make([]any, len(columns))
-			for i := range value {
-				args[i] = &value[i]
-			}
 			if err := rows.Scan(args...); err != nil {
 				t.Fatal(err)
 			}

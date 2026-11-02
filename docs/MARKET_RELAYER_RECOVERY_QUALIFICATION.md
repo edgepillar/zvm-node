@@ -34,8 +34,9 @@ raw bytes for the already executed first nonce. The adapter must observe a
 nonempty account-history page and canonical-hash nonce lookup, with no duplicate
 submission or publication, before the next wallet action proceeds.
 
-Four partial-batch and four missing-allowance profiles declare one reopen each.
-This proposes eight additional process lifetimes, or 51 total across the
+Five partial-batch (including mixed payment) and four missing-allowance profiles
+declare one reopen each. This requires nine additional process lifetimes, or
+52 total across the
 original 43 profiles. No additional wallet transaction or NoM publication is
 introduced. Exact runtime counts and first-source execution must be checked in
 fresh hosted logs; this document is not evidence that the candidate ran.
@@ -46,3 +47,8 @@ wallet recovery, production wallets, independent NoM authority/finality,
 hardware power loss, deployed operator policies or broader platform acceptance.
 Optional `local-sync` retains its separate evidence and remaining wallet gate.
 All original acceptance requirements remain active and production is **NO_GO**.
+
+Separate queued-ACK `local-sync` variants are described in
+[Queued wallet ACK recovery](MARKET_DURABLE_WALLET_RECOVERY.md).
+They require their own fresh current-source execution and preserve all original
+default-volatile profiles and financial predicates.

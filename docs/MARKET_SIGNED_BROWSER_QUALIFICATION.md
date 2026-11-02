@@ -627,3 +627,10 @@ with exact embedded VCS revision and unchanged-binary checks. Historical runs
 using `5a72a223dd60d1ae4e974d420cadd85e6f9ee929` retain their original scope.
 The new combination requires fresh current-source CI; see
 [Relayer recovery in marketplace fixtures](MARKET_RELAYER_RECOVERY_QUALIFICATION.md).
+
+The proposed queued-ACK extension keeps every existing profile and adds nine
+separately named `local-sync` variants. It requires actual kernel-kill joins,
+retained signed-wire checks and the same complete financial predicates. Source
+counts are 52 profiles, 1,244 checks, 70 transactions/publications and 79 CLI
+lifetimes until verified by fresh logs; see
+[Queued wallet ACK recovery](MARKET_DURABLE_WALLET_RECOVERY.md).

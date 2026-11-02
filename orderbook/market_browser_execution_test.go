@@ -91,9 +91,33 @@ func TestExecutedMarketBrowserAdmissionAndRecovery(t *testing.T) {
 		t.Run(app+"-single-external-royalty-batch", func(t *testing.T) { executedMarketBrowserProfile(t, roots, app, "single", "batch", "external-royalty") })
 	}
 
+	// Keep every original volatile profile and add all nine durable two-leg variants.
+	for _, app := range []string{"nft", "karum"} {
+		for _, kind := range []string{"single", "bulk"} {
+			t.Run("durable-ack-"+app+"-"+kind+"-partial-batch", func(t *testing.T) { executedMarketBrowserRecoveryProfile(t, roots, app, kind, "partial-batch", true) })
+		}
+	}
+	t.Run("durable-ack-karum-single-mixed-partial-batch", func(t *testing.T) {
+		executedMarketBrowserRecoveryProfile(t, roots, "karum", "single", "partial-batch", true, "mixed")
+	})
+	for _, test := range []struct{ name, app, kind, action, payment string }{
+		{"nft-single-qsr-missing-allowance", "nft", "single", "buy", "qsr-approval"},
+		{"karum-single-mixed-missing-allowance", "karum", "single", "batch", "mixed-approval"},
+		{"nft-bulk-qsr-missing-allowance", "nft", "bulk", "buy", "qsr-approval"},
+		{"karum-bulk-qsr-missing-allowance", "karum", "bulk", "batch", "qsr-approval"},
+	} {
+		t.Run("durable-ack-"+test.name, func(t *testing.T) {
+			executedMarketBrowserRecoveryProfile(t, roots, test.app, test.kind, test.action, true, test.payment)
+		})
+	}
 }
 
 func executedMarketBrowserProfile(t *testing.T, roots map[string]string, app, kind, action string, payment ...string) {
+	t.Helper()
+	executedMarketBrowserRecoveryProfile(t, roots, app, kind, action, false, payment...)
+}
+
+func executedMarketBrowserRecoveryProfile(t *testing.T, roots map[string]string, app, kind, action string, durableACK bool, payment ...string) {
 	var f *orderbook.ExecutedMarketFixture
 	var transport *orderbook.ExecutedMarketProviderFixture
 	if len(payment) > 1 {
@@ -144,7 +168,10 @@ func executedMarketBrowserProfile(t *testing.T, roots map[string]string, app, ki
 	token := hex.EncodeToString(tokenBytes)
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
-	relayerURL, joinRelayer, reopenRelayer := startProductionMarketRelayer(t, ctx, f, transport.SourceURL())
+	if durableACK && action != "partial-batch" && !f.TokenApprovalRequired() {
+		t.Fatal("durable ACK requires a declared two-transaction browser profile")
+	}
+	relayerURL, joinRelayer, reopenRelayer, recoverQueuedACK := startProductionMarketRelayerWithAdmission(t, ctx, f, transport.SourceURL(), durableACK)
 	defer joinRelayer()
 	transport.UseRelayer(t, relayerURL)
 	type phaseRequest struct {
@@ -317,7 +344,18 @@ func executedMarketBrowserProfile(t *testing.T, roots map[string]string, app, ki
 					transport.PinBatchBalances(t)
 				}
 			case "approval-ordered":
+				if durableACK {
+					hash, raw := transport.QueuedWalletACK(t)
+					recoverQueuedACK(hash, raw)
+				}
 				transport.BindTokenApproval(t, ctx)
+				if durableACK {
+					record, err := json.Marshal(transport.DurableWalletPublicationEvidence(t))
+					if err != nil {
+						t.Fatal(err)
+					}
+					t.Log("ACTUAL-MARKET-DURABLE-PUBLICATION " + string(record))
+				}
 				f.Advance(0, transport.ActionHeight())
 			case "approval-mined":
 				transport.AssertTokenApproval(t)
@@ -326,9 +364,24 @@ func executedMarketBrowserProfile(t *testing.T, roots map[string]string, app, ki
 				if err != nil {
 					t.Fatal(err)
 				}
-				t.Log("ACTUAL-MARKET-RELAYER-RECOVERY " + string(recovery))
+				recoveryMarker := "ACTUAL-MARKET-RELAYER-RECOVERY "
+				if durableACK {
+					recoveryMarker = "ACTUAL-MARKET-DURABLE-HISTORY-RECOVERY "
+				}
+				t.Log(recoveryMarker + string(recovery))
 			case "cancel-ordered":
+				if durableACK {
+					hash, raw := transport.QueuedWalletACK(t)
+					recoverQueuedACK(hash, raw)
+				}
 				transport.BindBatchCancellation(t, ctx)
+				if durableACK {
+					record, err := json.Marshal(transport.DurableWalletPublicationEvidence(t))
+					if err != nil {
+						t.Fatal(err)
+					}
+					t.Log("ACTUAL-MARKET-DURABLE-PUBLICATION " + string(record))
+				}
 				f.Advance(0, transport.ActionHeight())
 				batchStage = 1
 			case "cancel-mined":
@@ -338,7 +391,11 @@ func executedMarketBrowserProfile(t *testing.T, roots map[string]string, app, ki
 				if err != nil {
 					t.Fatal(err)
 				}
-				t.Log("ACTUAL-MARKET-RELAYER-RECOVERY " + string(recovery))
+				recoveryMarker := "ACTUAL-MARKET-RELAYER-RECOVERY "
+				if durableACK {
+					recoveryMarker = "ACTUAL-MARKET-DURABLE-HISTORY-RECOVERY "
+				}
+				t.Log(recoveryMarker + string(recovery))
 				batchStage = 1
 			case "ordered":
 				transport.BindPublishedTransaction(t, ctx)

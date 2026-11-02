@@ -1,3 +1,4 @@
+import {matchCurrentRequestHandling} from './market-request-handling-support.mjs'
 // Observe Network events directly; interception callbacks also describe
 // operations that have no corresponding Network request or completion.
 import assert from 'node:assert/strict'
@@ -87,6 +88,7 @@ function observePageLifecycle(page) {
       passiveOnly: true, completionGateChanged: false}},
     matchesClient(id, url, method) {return pageClient.matches(id, url, method)},
     matchesRequestId(id, url, method) {return pageRequestIdMatches(active, recent, id, url, method)},
+    matchesHandling(id, url, method) {return matchCurrentRequestHandling(active, recent, id, url, method)},
     matchesActions(id, url, method) {
       const matching = records => [...records].filter(([, entry]) => entry.requestIdentity?.status === 'AVAILABLE' &&
         entry.requestIdentity.requestId === id && entry.url === url && entry.method === method)
@@ -171,6 +173,7 @@ export function createNavigationRequestTracker(session, page) {
         pageLifecycleMatches: pageLifecycle?.matches(url, method) ?? null,
         pageRequestIdMatches: pageLifecycle?.matchesRequestId(id, url, method) ?? null,
         pageClientMatches: pageLifecycle?.matchesClient(id, url, method) ?? null,
+        pageRequestHandlingMatches: pageLifecycle?.matchesHandling(id, url, method) ?? null,
         pageRequestActionMatches: pageLifecycle?.matchesActions(id, url, method) ?? null}
     })})
   return {

@@ -250,3 +250,5 @@ import './market-request-identity-support.test.mjs'
 import './market-page-client-support.test.mjs'
 
 import './market-request-action-support.test.mjs'
+
+import './market-request-handling-support.test.mjs'

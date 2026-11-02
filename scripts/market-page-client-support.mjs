@@ -87,7 +87,7 @@ export function createPageClientObserver(active, recent) {
           observationsTruncated: values.length > pageClientObservationLimits.recent,
           observations: values.slice(0, pageClientObservationLimits.recent).map(entry => {
             const value = observations.get(entry)
-            return {status: value?.status ?? 'UNAVAILABLE', reason: value?.reason ?? 'NOT_OBSERVED',
+            return {status: value?.status ?? 'UNAVAILABLE', reason: value ? value.reason : 'NOT_OBSERVED',
               signals: value?.signals.map(signal => ({...signal})) ?? [], signalsTruncated: value?.truncated ?? false}
           })}
       } catch {return {...base, status: 'UNAVAILABLE', observationsTruncated: false, observations: []}}

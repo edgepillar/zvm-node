@@ -102,8 +102,20 @@ export async function readOwnedRPCProgress(base, capability, {fetchImpl = global
   } finally { clearTimeout(timer) }
 }
 
+export function readBrowserConnection(browser) {
+  try {
+    const current = browser?.connected
+    if (typeof current === 'boolean') return current
+    if (current !== undefined) return null
+    const legacy = browser?.isConnected
+    if (typeof legacy !== 'function') return null
+    const value = Reflect.apply(legacy, browser, [])
+    return typeof value === 'boolean' ? value : null
+  } catch {return null}
+}
+
 export async function reportOwnedRPCProgress(fixture, browser) {
-  const connected = () => {try {return typeof browser?.isConnected === 'function' ? browser.isConnected() : null} catch {return null}}
+  const connected = () => readBrowserConnection(browser)
   const before = connected()
   const observation = await readOwnedRPCProgress(fixture.base, fixture.token)
   console.log('OWNED-MARKET-RPC-PROGRESS ' + JSON.stringify({phase: 'BEFORE_OWNED_BROWSER_CLOSE',

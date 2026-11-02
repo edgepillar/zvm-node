@@ -3,7 +3,7 @@
 import {randomBytes} from 'node:crypto'
 export const ownedRPCHeader = 'X-ZVM-Fixture-Request'
 export const ownedRPCQueryHeader = 'X-ZVM-Fixture-Requests'
-export const ownedRPCLimits = Object.freeze({records: 256, early: 256, scopes: 4, bindings: 256, query: 8, body: 16384, chunks: 64, timeout: 750})
+export const ownedRPCLimits = Object.freeze({records: 256, early: 256, scopes: 4, bindings: 512, query: 8, body: 16384, chunks: 64, timeout: 750})
 const scope = 'owned-loopback-rpc-request-correlation'
 const nonceValid = value => typeof value === 'string' && /^[a-f0-9]{32}$/.test(value)
 const idValid = value => typeof value === 'string' && value.length > 0 && value.length <= 512 && !/[^\x21-\x7e]/.test(value)
@@ -77,11 +77,13 @@ export function createOwnedRPCCorrelation(origin, {nonceFactory = () => randomBy
   const records = new Map(), requestTags = new WeakMap(), entryEcho = new WeakMap(), selections = new WeakMap()
   const defaultScope = {}, scopeStates = new WeakMap(), retainedScopes = []
   let tagged = 0, fallbacks = 0, readErrors = 0, truncated = false, primaryEchoes = 0
+  const limitHits = {records:0,primaryScopes:0,primaryBindings:0,earlyHeaderEchoes:0}
+  const limit = kind => {truncated=true;limitHits[kind]=Math.min(Number.MAX_SAFE_INTEGER,limitHits[kind]+1)}
   const scopeState = session => {
     const key = session === undefined ? defaultScope : session
     if (!key || typeof key !== 'object') {readErrors++; return null}
     if (scopeStates.has(key)) return scopeStates.get(key)
-    if (retainedScopes.length === ownedRPCLimits.scopes) {truncated=true; return null}
+    if (retainedScopes.length === ownedRPCLimits.scopes) {limit('primaryScopes'); return null}
     const value = {early:new Map(),bindings:new Map()}
     scopeStates.set(key,value);retainedScopes.push(value);return value
   }
@@ -95,7 +97,7 @@ export function createOwnedRPCCorrelation(origin, {nonceFactory = () => randomBy
       }
       return true
     }
-    if (state.bindings.size === ownedRPCLimits.bindings) {truncated=true; return false}
+    if (state.bindings.size === ownedRPCLimits.bindings) {limit('primaryBindings'); return false}
     state.bindings.set(id,{entry,reused:false});return true
   }
   const rpc = (url,method) => {
@@ -176,7 +178,7 @@ export function createOwnedRPCCorrelation(origin, {nonceFactory = () => randomBy
       try {
         if (rpc(request.url(),request.method())) {
           let record = requestTags.get(request)
-          if (!record && records.size === ownedRPCLimits.records) {truncated=true; fallbacks++}
+          if (!record && records.size === ownedRPCLimits.records) {limit('records'); fallbacks++}
           else {
             const headers = request.headers()
             if (!headers || typeof headers !== 'object' || Array.isArray(headers)) throw new Error('header view unavailable')
@@ -208,7 +210,7 @@ export function createOwnedRPCCorrelation(origin, {nonceFactory = () => randomBy
           if (!known.reused) bindEcho(known.entry,nonce)
           return
         }
-        if (!state.early.has(event.requestId) && state.early.size === ownedRPCLimits.early) {truncated=true; return}
+        if (!state.early.has(event.requestId) && state.early.size === ownedRPCLimits.early) {limit('earlyHeaderEchoes'); return}
         if (state.early.has(event.requestId) && state.early.get(event.requestId) !== nonce) state.early.set(event.requestId,null)
         else state.early.set(event.requestId,nonce)
       } catch {readErrors++}
@@ -226,6 +228,7 @@ export function createOwnedRPCCorrelation(origin, {nonceFactory = () => randomBy
     summary() {return {...baseFacts,taggedRequests:tagged,fallbacks,readErrors,primaryEchoes,records:records.size,
       early:retainedScopes.reduce((total,state)=>total+state.early.size,0),scopes:retainedScopes.length,
       bindings:retainedScopes.reduce((total,state)=>total+state.bindings.size,0),
+      limitHits:{...limitHits},primaryScopeUsage:retainedScopes.map((state,index)=>({index,bindings:state.bindings.size,early:state.early.size})),
       truncated,maximumRecords:ownedRPCLimits.records,maximumEarlyPerScope:ownedRPCLimits.early,
       maximumBindingsPerScope:ownedRPCLimits.bindings,maximumScopes:ownedRPCLimits.scopes,
       reusedOrUntrackedPrimaryRequestIdsRefused:true,lateHeaderEchoSupported:true,primaryObservationScopesIsolated:true,

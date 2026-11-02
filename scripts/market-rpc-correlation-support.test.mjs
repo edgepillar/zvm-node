@@ -212,14 +212,48 @@ await check('reused-primary-identity-refuses-both-entries',()=>{
 })
 await check('bounded-history-never-forgets-identity-reuse',()=>{
   const helper=fixture(),session={},entries=[]
-  for(let i=0;i<257;i++) {const entry={};entries.push(entry);helper.bind('id'+i,entry,session)}
-  assert.equal(helper.summary().bindings,256);assert.equal(helper.summary().truncated,true)
+  for(let i=0;i<=ownedRPCLimits.bindings;i++) {const entry={};entries.push(entry);helper.bind('id'+i,entry,session)}
+  assert.equal(helper.summary().bindings,ownedRPCLimits.bindings);assert.equal(helper.summary().truncated,true)
   helper.bind('id0',{},session);assert.equal(helper.diagnostic(entries[0]).status,'AMBIGUOUS')
 })
 
-assert.equal(controls.length,36)
+await check('expanded-primary-binding-window-retains-echo-and-reuse-refusal',()=>{
+  const {helper}=tagged(),session={},entries=[]
+  for(let i=0;i<ownedRPCLimits.bindings;i++) {const entry={};entries.push(entry);helper.bind('expanded'+i,entry,session)}
+  assert.equal(ownedRPCLimits.bindings,512);assert.equal(helper.summary().truncated,false)
+  helper.observeSignal('Network.responseReceivedExtraInfo',{requestId:'expanded256',headers:{[ownedRPCHeader]:nonce}},undefined,session)
+  assert.equal(helper.diagnostic(entries[256]).status,'OBSERVED')
+  helper.bind('expanded512',{},session)
+  assert.deepEqual(helper.summary().limitHits,{records:0,primaryScopes:0,primaryBindings:1,earlyHeaderEchoes:0})
+  assert.equal(helper.diagnostic(entries[256]).status,'OBSERVED')
+  helper.bind('expanded0',{},session);assert.equal(helper.diagnostic(entries[0]).status,'AMBIGUOUS')
+  assert.deepEqual(helper.summary().primaryScopeUsage,[{index:0,bindings:512,early:0}])
+})
+await check('limit-reasons-and-scope-usage-have-independent-private-copies',()=>{
+  const empty={records:0,primaryScopes:0,primaryBindings:0,earlyHeaderEchoes:0}
+  let sequence=0;const records=fixture({nonceFactory:()=>(++sequence).toString(16).padStart(32,'0')})
+  for(let i=0;i<=ownedRPCLimits.records;i++) records.continue(request())
+  assert.deepEqual(records.summary().limitHits,{...empty,records:1})
+  const scopes=fixture();for(let i=0;i<=ownedRPCLimits.scopes;i++) scopes.bind('one',{}, {})
+  assert.deepEqual(scopes.summary().limitHits,{...empty,primaryScopes:1})
+  const bindings=fixture(),session={}
+  for(let i=0;i<=ownedRPCLimits.bindings;i++) bindings.bind('id'+i,{},session)
+  assert.deepEqual(bindings.summary().limitHits,{...empty,primaryBindings:1})
+  const {helper:early}=tagged()
+  for(let i=0;i<=ownedRPCLimits.early;i++) early.observeSignal('Network.responseReceivedExtraInfo',
+    {requestId:'early'+i,headers:{[ownedRPCHeader]:nonce}},undefined)
+  assert.deepEqual(early.summary().limitHits,{...empty,earlyHeaderEchoes:1})
+  const external=early.summary();external.limitHits.earlyHeaderEchoes=0;external.primaryScopeUsage[0].early=0
+  assert.deepEqual(early.summary().limitHits,{...empty,earlyHeaderEchoes:1})
+  assert.deepEqual(early.summary().primaryScopeUsage,[{index:0,bindings:0,early:256}])
+  for(const helper of [records,scopes,bindings,early]) assert.equal(helper.summary().truncated,true)
+  assert.ok(!JSON.stringify(early.summary()).includes(nonce))
+})
+
+assert.equal(controls.length,38)
 console.log('OWNED-RPC-CORRELATION-FAKE-CONTROLS '+JSON.stringify({controls:controls.length,controlNames:controls,pass:true,
   SDKOrBrowserExecutions:0,realNetworkRequests:0,originalHTTPArgumentsPreservedExceptOwnedNonceHeader:true,
   synchronousThrowAndRejectionPropagatedOnce:true,nonceOrRequestValuesReported:false,completionGateChanged:false,
+  maximumPrimaryBindingsPerScope:512,preciseLimitHitCounts:true,scopeUsageContainsOpaqueValues:false,
   lookupMaximumMilliseconds:750,lookupBodyLimit:16384,maximumRecords:256,maximumLookupTargets:8,
   fixtureCorrelationIsAuthentication:false,responseDeliveryEstablished:false,protocolSessionIdentityEstablished:false}))

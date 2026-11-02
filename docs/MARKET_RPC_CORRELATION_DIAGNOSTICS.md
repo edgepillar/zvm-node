@@ -18,7 +18,7 @@ headers, request bodies, URLs, capabilities or error text.
 The passive navigation hook reads only the owned response header from existing
 Network response-extra-info events. It supports an echo preceding the matching
 request event or arriving after its completion event. Four primary sessions
-retain at most 256 protocol identities and 256 early echoes each. Session scopes
+retain at most 512 protocol identities and 256 early echoes each. Session scopes
 are isolated; reused identities remain ambiguous instead of being forgotten.
 Conflicts, unknown tags and observations exceeding the bound are refused. Opaque selections retain
 nonces privately. A matching local tag, primary-session echo and unique server
@@ -40,3 +40,18 @@ TestMarketRPCProgress parent, retaining every original named subtest. Local
 standard-library controls use fake requests/events/fetch and no SDK, browser or
 real network. Runtime correlation and the complete marketplace matrix require
 fresh qualification at the candidate source. All original roadmap gates remain.
+
+The summary reports separate saturated limit-hit counts for records, primary
+scopes, primary bindings and early header echoes. Its per-scope usage contains
+only an array index and binding/early counts. Both nested summaries are fresh
+copies; modifying them cannot change retained observation state. The aggregate
+truncation flag remains true after any limit hit. A refused observation keeps
+the original HTTP operation and never removes a retained identity to hide reuse.
+
+The primary binding window increases from 256 to 512 identities per scope,
+raising the maximum across four scopes from 1,024 to 2,048 retained bindings.
+The record, early-echo, active-handler, scope, query, body and deadline limits
+remain. This capacity change has no measured runtime memory or elapsed gain.
+Previous aggregate flags do not establish which limit caused a historical
+truncation or explain an earlier browser failure. New counters describe only
+the candidate execution that produced them.

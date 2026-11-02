@@ -117,8 +117,14 @@ func TestRemoteCompilerRefusesOverflowInsteadOfReturningATruncatedResult(t *test
 		runner := &RemoteRunner{URL: srv.URL, MaxOutputBytes: 8}
 		out, err := runner.Compile(context.Background(), "fixture", []byte(`{}`))
 		srv.Close()
-		if !errors.Is(err, ErrCompilerOutputLimit) || len(out) != 0 {
-			t.Fatalf("HTTP %d returned partial compiler output: %q err=%v", code, out, err)
+		want := ErrCompilerOutputLimit
+		if code != http.StatusOK {
+			// The failure body is never consumed or returned. A legacy HTTP 400
+			// is the fixed invalid-request class, independent of its body size.
+			want = ErrInvalid
+		}
+		if !errors.Is(err, want) || len(out) != 0 {
+			t.Fatalf("HTTP %d returned partial compiler output: %q err=%v want=%v", code, out, err, want)
 		}
 	}
 }

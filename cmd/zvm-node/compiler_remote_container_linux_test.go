@@ -64,7 +64,9 @@ func TestCompilerRemoteClientContainerProfile(t *testing.T) {
 	})
 	t.Run("typed_busy_deadline_and_fresh_success", func(t *testing.T) {
 		f := newCompilerProfileFixture(t, "deadline")
-		p := f.start(binary, 2)
+		// The retained compiler, its owned start marker and the second compiler
+		// each occupy one cache file. Keep all three in the explicit budget.
+		p := f.start(binary, 3)
 		client := &verify.RemoteRunner{URL: p.url}
 		done := make(chan error, 1)
 		go func() { _, err := client.Compile(context.Background(), f.version, input); done <- err }()
@@ -95,7 +97,7 @@ func TestCompilerRemoteClientContainerProfile(t *testing.T) {
 			t.Fatal("deadline retained the slot, changed release work or canceled independent later work", err)
 		}
 		p.stop(t)
-		compilerRemoteRecord(t, "actual_remote_busy_deadline_and_reuse", map[string]any{"typed_busy": true, "typed_deadline": true, "original_client_joined": true, "independent_later_compile_succeeded": true, "new_binary_downloads": 1})
+		compilerRemoteRecord(t, "actual_remote_busy_deadline_and_reuse", map[string]any{"typed_busy": true, "typed_deadline": true, "original_client_joined": true, "independent_later_compile_succeeded": true, "new_binary_downloads": 1, "cache_file_budget": 3, "owned_start_marker_files": 1})
 	})
 	t.Run("client_success_output_budget", func(t *testing.T) {
 		f := newCompilerProfileFixture(t, "large-success")

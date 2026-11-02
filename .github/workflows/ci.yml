@@ -73,6 +73,10 @@ jobs:
         env:
           GOWORK: ${{ runner.temp }}/zvm-simulator-fixture/go.work
         run: go test -race -json -count=1 -run '^Test(MarketHTTP(ReorgVisibility|RefusedRewind)|ExecutedMarketAdmissionAndCanonicalRecovery|WireOrderTimes(RetainOriginalInputAndHash|RefuseAmbiguousJSON)|SQLiteOrderTimesRetainUnsignedRangeAndOrdering|StoredOrderTimesRefuseLossyOrNoncanonicalValues|BookImportsFullWidthOnChainOrderTimes|BookAcceptedHeadObservations|ClosedOrder(CompleteEvidence|Recovery|RecoveryFences|RecoveryPages)|URIHistory.*|URIHostUsesTheExactHashWithoutLatestFallback|ObservedURIDecoderRefusesIncompleteEvidence|BackfillSourceFence|PreparedURI|PreparedURIIndexedGap|PreparedURIRangeKeys|PreparedURIRangeFilter|PreparedURIRollbackBudget|PreparedURIWriterBoundary|MarketRPCProgress|PreparedURIRangeIndex)$' ./indexer ./orderbook ./indexer/nft
+      - name: Check adopted compiler and media boundaries with the race detector
+        env:
+          GOWORK: ${{ runner.temp }}/zvm-simulator-fixture/go.work
+        run: go test -race -json -count=1 -timeout=5m ./cmd/zvm-node ./media ./verify
       - name: Verify the exact test-only dependency delta and tracked source
         run: |
           python3 scripts/prepare-simulated-backend-fixture.py verify "$RUNNER_TEMP/zvm-simulator-fixture"
@@ -245,3 +249,18 @@ jobs:
             -test.run='^Test(FullClientKernelKillRecovery|OwnedFullClientKernelMarkerControls)$'
       - name: Refuse tracked source drift
         run: git diff --exit-code
+
+  compiler-isolation:
+    needs: [ci-scope]
+    if: ${{ always() && needs.ci-scope.outputs.run_go != 'false' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          submodules: true
+          persist-credentials: false
+      - name: Build once and qualify the actual isolated compiler service
+        env:
+          N01_GO_IMAGE: docker.io/library/golang@sha256:ebd54034f076819b3054f155db53660ded951612bb4dfd277f933e62059e5d5a
+        run: sh scripts/ci-compiler-isolation.sh

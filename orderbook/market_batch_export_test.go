@@ -307,7 +307,7 @@ func (p *ExecutedMarketProviderFixture) partialEvidence() map[string]any {
 		"verifiedNoMPublications": p.publications, "statefulGasEstimates": p.estimates,
 		"absentCanonicalReceiptObservations": p.missingReceipts, "executedCanonicalReceiptObservations": p.executedReceipts,
 		"unexpectedSourceErrors": p.unexpected, "signedRawBytes": size, "alreadyDerivedSourceHeightsPreserved": p.FundingHeight(),
-		"actualRelayerSource": "5a72a223dd60d1ae4e974d420cadd85e6f9ee929", "actualNoMAccountSignatureVerified": true,
+		"actualRelayerSource": ExecutedMarketRelayerSource, "actualNoMAccountSignatureVerified": true,
 		"fundingActorNonce": p.initialNonce, "fundingActorNoncePinnedFromExecutedState": p.nonceKnown,
 		"exactProviderRawTransactionBytesPreserved": true, "nativeBuySubstitutions": 0, "sourceBoundBeforeDerivation": p.bound,
 		"independentProductionSellerCancellation": p.partial != nil, "actualProviderTokenApproval": p.tokenApproval != nil, "accountBlockHeightAndPreviousHashSequenceVerified": true, "legs": legs}

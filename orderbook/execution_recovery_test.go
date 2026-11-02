@@ -201,6 +201,12 @@ func (s executionEth) header(selector rpc.BlockNumberOrHash) (*types.Header, err
 	b := s.backend
 	if hash, ok := selector.Hash(); ok {
 		if header := b.chain.GetHeaderByHash(hash); header != nil {
+			if selector.RequireCanonical {
+				canonical := b.chain.GetHeaderByNumber(header.Number.Uint64())
+				if canonical == nil || canonical.Hash() != hash {
+					return nil, errors.New("orphaned executed block refused")
+				}
+			}
 			return header, nil
 		}
 	} else if number, ok := selector.Number(); ok {

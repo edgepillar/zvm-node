@@ -76,7 +76,7 @@ func executedMarketCreditBrowserProfile(t *testing.T, roots map[string]string, a
 	token := hex.EncodeToString(capability)
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
-	relayerURL, joinRelayer := startProductionMarketRelayer(t, ctx, f, transport.SourceURL())
+	relayerURL, joinRelayer, _ := startProductionMarketRelayer(t, ctx, f, transport.SourceURL())
 	defer joinRelayer()
 	transport.UseRelayer(t, relayerURL)
 	type phaseRequest struct {

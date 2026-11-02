@@ -144,7 +144,7 @@ func executedMarketBrowserProfile(t *testing.T, roots map[string]string, app, ki
 	token := hex.EncodeToString(tokenBytes)
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
-	relayerURL, joinRelayer := startProductionMarketRelayer(t, ctx, f, transport.SourceURL())
+	relayerURL, joinRelayer, reopenRelayer := startProductionMarketRelayer(t, ctx, f, transport.SourceURL())
 	defer joinRelayer()
 	transport.UseRelayer(t, relayerURL)
 	type phaseRequest struct {
@@ -321,12 +321,24 @@ func executedMarketBrowserProfile(t *testing.T, roots map[string]string, app, ki
 				f.Advance(0, transport.ActionHeight())
 			case "approval-mined":
 				transport.AssertTokenApproval(t)
+				reopenRelayer()
+				recovery, err := json.Marshal(transport.RelayerRecoveryEvidence(t))
+				if err != nil {
+					t.Fatal(err)
+				}
+				t.Log("ACTUAL-MARKET-RELAYER-RECOVERY " + string(recovery))
 			case "cancel-ordered":
 				transport.BindBatchCancellation(t, ctx)
 				f.Advance(0, transport.ActionHeight())
 				batchStage = 1
 			case "cancel-mined":
 				transport.AssertBatchCancellation(t)
+				reopenRelayer()
+				recovery, err := json.Marshal(transport.RelayerRecoveryEvidence(t))
+				if err != nil {
+					t.Fatal(err)
+				}
+				t.Log("ACTUAL-MARKET-RELAYER-RECOVERY " + string(recovery))
 				batchStage = 1
 			case "ordered":
 				transport.BindPublishedTransaction(t, ctx)

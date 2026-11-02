@@ -61,36 +61,17 @@ func (p *ExecutedMarketProviderFixture) sequencedSourceRPC(w http.ResponseWriter
 	switch call.Method {
 	case "embedded.plasma.get":
 		result = &znn.PlasmaInfo{CurrentPlasma: 10_500_000, MaxPlasma: 10_500_000, QsrAmount: znn.BigIntFromUint64(500_000_000_000)}
-	case "ledger.getFrontierAccountBlock":
+	case "ledger.getFrontierAccountBlock", "ledger.getAccountBlockByHash", "ledger.getAccountBlocksByHeight", "ledger.getUnconfirmedBlocksByAddress":
+		blocks := []*znn.AccountBlock{}
 		for i := range p.providerLegs() {
 			if block := copyBlock(i); block != nil {
-				result = block
+				blocks = append(blocks, block)
 			}
 		}
-	case "ledger.getAccountBlockByHash":
-		var hash znn.Hash
-		if len(call.Params) != 1 || json.Unmarshal(call.Params[0], &hash) != nil {
-			failure = errors.New("exact account hash required")
-			break
+		result, failure = executedRelayerAccountResponse(blocks, call.Method, call.Params)
+		if failure == nil && call.Method == "ledger.getAccountBlocksByHeight" {
+			p.completeHistoryReads++
 		}
-		for i := range p.providerLegs() {
-			if block := copyBlock(i); block != nil && block.Hash == hash {
-				result = block
-			}
-		}
-	case "ledger.getAccountBlocksByHeight", "ledger.getUnconfirmedBlocksByAddress":
-		list := []*znn.AccountBlock{}
-		start, count := uint64(1), uint64(2)
-		if call.Method == "ledger.getAccountBlocksByHeight" && (len(call.Params) != 3 || json.Unmarshal(call.Params[1], &start) != nil || json.Unmarshal(call.Params[2], &count) != nil || count > 64) {
-			failure = errors.New("bounded account-block height range required")
-			break
-		}
-		for i := range p.providerLegs() {
-			if block := copyBlock(i); block != nil && block.Height >= start && block.Height-start < count && (call.Method != "ledger.getUnconfirmedBlocksByAddress" || block.ConfirmationDetail == nil) {
-				list = append(list, block)
-			}
-		}
-		result = &znn.BlockList{Count: uint64(len(list)), List: list}
 	case "ledger.getMomentumsByHeight":
 		var start, count uint64
 		if len(call.Params) != 2 || json.Unmarshal(call.Params[0], &start) != nil || json.Unmarshal(call.Params[1], &count) != nil || count > 64 {

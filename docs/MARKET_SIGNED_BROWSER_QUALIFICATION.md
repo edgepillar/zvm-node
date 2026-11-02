@@ -13,7 +13,7 @@ invalidation, or collection permission removal through its actual controls.
 | --- | --- |
 | NFT production application | `1eda1f3334f59f8138cf980cbba1fb225247f17b` |
 | Karum production application | `2d64eac12733505e9d7bfe948057b37e788c2807` |
-| Official relayer program | `5a72a223dd60d1ae4e974d420cadd85e6f9ee929` |
+| Reviewed Relayer candidate | `edgepillar/zvm-relayer` at `f5d55cce233a90fa962837671b0371004ea56a12` |
 | Shared Core | `29e6d9b30be94de3772c850c7a1e9811585a8833` |
 | Application Viem | `2.56.8`, separately installed from each unchanged lock |
 | Execution dependency | `op-geth v1.101702.2`, from the node's Go lock |
@@ -621,3 +621,9 @@ one-minute package bound. Native signatures run once before production profiles;
 the four new profiles retain their two-minute bound. Existing twelve-minute
 package and fifteen-minute job bounds remain. Qualification requires the whole
 retained and ERC-1271 matrix; a failed predecessor retains its actual outcome.
+
+The current consumer proposes the reviewed Relayer candidate in the table above,
+with exact embedded VCS revision and unchanged-binary checks. Historical runs
+using `5a72a223dd60d1ae4e974d420cadd85e6f9ee929` retain their original scope.
+The new combination requires fresh current-source CI; see
+[Relayer recovery in marketplace fixtures](MARKET_RELAYER_RECOVERY_QUALIFICATION.md).

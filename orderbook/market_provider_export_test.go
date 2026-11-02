@@ -39,6 +39,7 @@ type ExecutedMarketProviderFixture struct {
 	bound                                                                               bool
 	initialNonce                                                                        uint64
 	nonceKnown                                                                          bool
+	completeHistoryReads, canonicalRecoveryNonces                                       int
 	partial                                                                             *executedPartialBatch
 	batchBalances                                                                       *executedBatchBalances
 	credit                                                                              *executedCreditTransfer
@@ -287,6 +288,11 @@ func (s executionEth) GetTransactionCount(_ context.Context, address common.Addr
 	if err != nil {
 		return 0, err
 	}
+	if _, byHash := at.Hash(); byHash && at.RequireCanonical && s.backend.provider != nil {
+		s.backend.provider.mu.Lock()
+		s.backend.provider.canonicalRecoveryNonces++
+		s.backend.provider.mu.Unlock()
+	}
 	return hexutil.Uint64(state.GetNonce(address)), nil
 }
 
@@ -401,20 +407,19 @@ func (p *ExecutedMarketProviderFixture) sourceRPC(w http.ResponseWriter, r *http
 	switch call.Method {
 	case "embedded.plasma.get":
 		result = &znn.PlasmaInfo{CurrentPlasma: 10_500_000, MaxPlasma: 10_500_000, QsrAmount: znn.BigIntFromUint64(500_000_000_000)}
-	case "ledger.getFrontierAccountBlock", "ledger.getAccountBlockByHash":
+	case "ledger.getFrontierAccountBlock", "ledger.getAccountBlockByHash", "ledger.getAccountBlocksByHeight", "ledger.getUnconfirmedBlocksByAddress":
+		blocks := []*znn.AccountBlock{}
 		if p.published != nil {
 			copy := *p.published
 			if confirmed {
 				copy.ConfirmationDetail = &znn.ConfirmationDetail{NumConfirmations: limit - p.ActionHeight() + 1, MomentumHeight: p.ActionHeight(), MomentumHash: source[p.ActionHeight()].Momentum.Hash, MomentumTimestamp: source[p.ActionHeight()].Momentum.Timestamp}
 			}
-			result = &copy
+			blocks = append(blocks, &copy)
 		}
-	case "ledger.getAccountBlocksByHeight", "ledger.getUnconfirmedBlocksByAddress":
-		list := []*znn.AccountBlock{}
-		if p.published != nil && (call.Method != "ledger.getUnconfirmedBlocksByAddress" || !confirmed) {
-			list = append(list, p.published)
+		result, failure = executedRelayerAccountResponse(blocks, call.Method, call.Params)
+		if failure == nil && call.Method == "ledger.getAccountBlocksByHeight" {
+			p.completeHistoryReads++
 		}
-		result = &znn.BlockList{Count: uint64(len(list)), List: list}
 	case "ledger.getMomentumsByHeight":
 		var start, count uint64
 		if len(call.Params) != 2 || json.Unmarshal(call.Params[0], &start) != nil || json.Unmarshal(call.Params[1], &count) != nil || count > 64 {
@@ -619,7 +624,7 @@ func (p *ExecutedMarketProviderFixture) Evidence() map[string]any {
 	return map[string]any{"action": p.Action(), "actor": p.Actor().Hex(), "signedSubmissions": p.submissions, "verifiedNoMPublications": p.publications, "statefulGasEstimates": p.estimates,
 		"absentCanonicalReceiptObservations": p.missingReceipts, "executedCanonicalReceiptObservations": p.executedReceipts,
 		"unexpectedSourceErrors": p.unexpected, "signedRawBytes": len(p.raw), "alreadyDerivedSourceHeightsPreserved": p.FundingHeight(),
-		"actualRelayerSource": "5a72a223dd60d1ae4e974d420cadd85e6f9ee929", "actualNoMAccountSignatureVerified": true,
+		"actualRelayerSource": ExecutedMarketRelayerSource, "actualNoMAccountSignatureVerified": true,
 		"fundingActorNonce": p.initialNonce, "fundingActorNoncePinnedFromExecutedState": p.nonceKnown,
 		"exactProviderRawTransactionBytesPreserved": true, "nativeBuySubstitutions": 0, "sourceBoundBeforeDerivation": p.bound}
 }

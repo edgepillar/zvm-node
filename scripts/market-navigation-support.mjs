@@ -110,9 +110,10 @@ function observePageLifecycle(page) {
   }
 }
 
-export function createNavigationRequestTracker(session, page) {
+export function createNavigationRequestTracker(session, page, rpcCorrelation) {
   const pageLifecycle = page ? observePageLifecycle(page) : null
   const active = new Map(), subscribers = new Set()
+  const hook = (name, ...args) => {try {return rpcCorrelation?.[name]?.(...args)} catch {return null}}
   let changed = performance.now(), closed = false, broken = '', peak = 0
   let started = 0, completed = 0, documents = 0, cacheSignals = 0, unmatchedCompletionSignals = 0
   const notify = () => {for (const listener of [...subscribers]) listener()}
@@ -135,6 +136,7 @@ export function createNavigationRequestTracker(session, page) {
     // Passive evidence only. Extra-info/cache signals never complete a request.
     const tracked = typeof event?.requestId === 'string' ? active.get(event.requestId) : undefined
     if (tracked && diagnosticSignalTypes.has(type)) rememberSignal(tracked, type, event)
+    hook('observeSignal', type, event, tracked, session)
     if (type === 'Network.requestWillBeSent') {
       const id = identity(event)
       if (id === null) return
@@ -151,6 +153,7 @@ export function createNavigationRequestTracker(session, page) {
       if (active.size === maximumTrackedRequests) broken = 'navigation request tracking limit exceeded'
       else {
         active.set(id, {url: event.request.url, method: event.request.method, timestamp: event.timestamp, at: performance.now(), recentSignals: []})
+        hook('bind', id, active.get(id), session)
         started++; if (event.type === 'Document') documents++
         peak = Math.max(peak, active.size)
       }
@@ -166,7 +169,8 @@ export function createNavigationRequestTracker(session, page) {
   const diagnostic = () => ({activeRequests: active.size, maximumTrackedRequests, peak, started, completed,
     documentRequestsStarted: documents, cacheSignals, unmatchedCompletionSignals,
     pageLifecycle: pageLifecycle?.summary() ?? null,
-    requests: [...active.entries()].slice(0, 8).map(([id, {url, method, at, recentSignals}]) => {
+    requests: [...active.entries()].slice(0, 8).map(([id, entry]) => {
+      const {url, method, at, recentSignals} = entry
       let path = '[unparseable]'
       try {path = new URL(url).pathname.slice(0, 120)} catch {}
       return {method: method.slice(0, 12), path, ageMilliseconds: Math.round(performance.now() - at), recentSignals: recentSignals.map(signal => ({...signal})),
@@ -174,10 +178,12 @@ export function createNavigationRequestTracker(session, page) {
         pageRequestIdMatches: pageLifecycle?.matchesRequestId(id, url, method) ?? null,
         pageClientMatches: pageLifecycle?.matchesClient(id, url, method) ?? null,
         pageRequestHandlingMatches: pageLifecycle?.matchesHandling(id, url, method) ?? null,
+        ...(rpcCorrelation ? {ownedRPCCorrelation: hook('diagnostic', entry)} : {}),
         pageRequestActionMatches: pageLifecycle?.matchesActions(id, url, method) ?? null}
     })})
   return {
     close, diagnostic,
+    ownedRPCEntries() {return [...active.values()]},
     wait(deadline, quietMilliseconds = 100) {
       assert.ok(Number.isFinite(deadline) && quietMilliseconds > 0)
       const began = performance.now()
@@ -208,7 +214,7 @@ export function createNavigationRequestTracker(session, page) {
   }
 }
 
-export function observeNavigationRequests(page) {
+export function observeNavigationRequests(page, rpcCorrelation) {
   if (observed.has(page)) return observed.get(page)
   let session, tracker, closed = false
   const close = () => {
@@ -220,7 +226,7 @@ export function observeNavigationRequests(page) {
     try {
       session = await page.createCDPSession()
       if (closed) throw new Error('navigation page closed during network setup')
-      tracker = createNavigationRequestTracker(session, page)
+      tracker = createNavigationRequestTracker(session, page, rpcCorrelation)
       await session.send('Network.enable', {}, {timeout: 5000})
       if (closed || session.detached) throw new Error('navigation page closed during network setup')
       return tracker
@@ -241,7 +247,7 @@ async function withinDeadline(promise, deadline) {
   } finally {clearTimeout(timer)}
 }
 
-export function boundedNavigation(origin) {
+export function boundedNavigation(origin, {rpcCorrelation = null} = {}) {
   const selected = new URL(origin)
   assert.equal(selected.protocol, 'http:'); assert.equal(selected.hostname, '127.0.0.1')
   const timeoutMilliseconds = 20000, quietMilliseconds = 100
@@ -253,7 +259,7 @@ export function boundedNavigation(origin) {
       const began = performance.now(), deadline = began + timeoutMilliseconds
       attempts++
       try {
-        const tracker = await withinDeadline(observeNavigationRequests(page), deadline)
+        const tracker = await withinDeadline(observeNavigationRequests(page, rpcCorrelation), deadline)
         trackers.add(tracker)
         const before = tracker.diagnostic().documentRequestsStarted
         const remaining = deadline-performance.now()
@@ -268,6 +274,9 @@ export function boundedNavigation(origin) {
         const elapsed = performance.now()-began
         totalMilliseconds += elapsed; maximumMilliseconds = Math.max(maximumMilliseconds, elapsed)
       }
+    },
+    ownedRPCSelection() {
+      try {return rpcCorrelation?.select([...trackers].flatMap(tracker => tracker.ownedRPCEntries())) ?? null} catch {return null}
     },
     summary() {
       const values = [...trackers].map(tracker => tracker.diagnostic())

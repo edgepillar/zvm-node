@@ -1,3 +1,4 @@
+import {createOwnedRPCCorrelation} from './market-rpc-correlation-support.mjs'
 import {observeOwnedRequestAction} from './market-request-action-support.mjs'
 // Actual production listing controls, real EIP-712 signatures from a public
 // test signer and the real Go node/market/RPC fixture. No market or RPC reply
@@ -24,7 +25,8 @@ for await (const chunk of process.stdin) {
   assert.ok(rawInput.length <= 16384, 'bounded fixture input required')
 }
 const fixture = JSON.parse(rawInput), base = new URL(fixture.base)
-const navigation = boundedNavigation(base.origin)
+const rpcCorrelation = createOwnedRPCCorrelation(base.origin)
+const navigation = boundedNavigation(base.origin, {rpcCorrelation})
 assert.equal(base.protocol, 'http:')
 assert.equal(base.hostname, '127.0.0.1')
 assert.ok(base.port && /^[a-f0-9]{64}$/.test(fixture.token))
@@ -82,7 +84,7 @@ function armQuote() {
 async function releaseQuote() {
   assert.ok(heldQuoteRequest)
   const request = heldQuoteRequest; heldQuoteRequest = null
-  await observeOwnedRequestAction(request, 'CONTINUE', () => request.continue())
+  await observeOwnedRequestAction(request, 'CONTINUE', () => rpcCorrelation.continue(request))
 }
 let fundedNonce, fundedSellerNonce, tokenBulkTypedData, tokenBulkSignature, tokenBulkEvidence
 let releaseBuyer, heldBuyerReadyResolve
@@ -484,7 +486,7 @@ async function preparePage(page) {
           return
         }
       }
-      void observeOwnedRequestAction(request, 'CONTINUE', () => request.continue())
+      void observeOwnedRequestAction(request, 'CONTINUE', () => rpcCorrelation.continue(request))
     } else {external.push(target.protocol); void observeOwnedRequestAction(request, 'ABORT', () => request.abort('blockedbyclient'))}
   })
   page.on('pageerror', () => exceptions.push('page-exception'))
@@ -903,9 +905,10 @@ try {
     message: document.querySelector('main')?.textContent.slice(-700)})).catch(() => null)
   process.exitCode = 1
 } finally {
+  await rpcCorrelation.report(fixture, navigation.ownedRPCSelection())
   releaseApprovalBuyer()
   quoteArmed = false
-  if (heldQuoteRequest) {const request = heldQuoteRequest; heldQuoteRequest = null; await observeOwnedRequestAction(request, 'CONTINUE', () => request.continue()).catch(() => {})}
+  if (heldQuoteRequest) {const request = heldQuoteRequest; heldQuoteRequest = null; await observeOwnedRequestAction(request, 'CONTINUE', () => rpcCorrelation.continue(request)).catch(() => {})}
   if (context) await context.close()
   await stop()
   await rm(profile, {recursive: true, force: false})

@@ -153,7 +153,9 @@ func executedMarketBrowserProfile(t *testing.T, roots map[string]string, app, ki
 	}
 	phases := make(chan phaseRequest)
 	rpcProgress := newMarketRPCProgress()
+	rpcCorrelation := newMarketRPCCorrelations()
 	ui := http.NewServeMux()
+	ui.Handle("GET /__fixture/rpc-correlations", rpcCorrelation.lookupHandler(token))
 	writeJSON := func(w http.ResponseWriter, value any) {
 		w.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(w).Encode(value); err != nil {
@@ -213,7 +215,7 @@ func executedMarketBrowserProfile(t *testing.T, roots map[string]string, app, ki
 	var requestMu sync.Mutex
 	var submitted []*orderbook.Input
 	posts := 0
-	web := httptest.NewServer(rpcProgress.observe(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	web := httptest.NewServer(rpcCorrelation.observe(rpcProgress.observe(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost && r.URL.Path == "/api/nft/orders" {
 			body := r.Body
 			raw, err := io.ReadAll(io.LimitReader(body, (256<<10)+1))
@@ -243,7 +245,7 @@ func executedMarketBrowserProfile(t *testing.T, roots map[string]string, app, ki
 			r.Body = io.NopCloser(bytes.NewReader(raw))
 		}
 		handler.ServeHTTP(w, r)
-	})))
+	}))))
 	defer web.Close()
 	input, err := json.Marshal(map[string]any{"base": web.URL, "token": token, "roots": roots,
 		"app": app, "kind": kind, "collection": f.Collection().Hex(), "exchange": f.Exchange().Hex(),

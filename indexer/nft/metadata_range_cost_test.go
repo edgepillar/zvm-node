@@ -10,8 +10,8 @@ import (
 )
 
 func metadataIndexCostID(number int) any {
-	special := []any{"+0", "-0", "00", "0001", "+1", "1\x009", []byte("2"), []byte{0xff}}
-	if number < len(special) {
+	if number < 8 {
+		special := []any{"+0", "-0", "00", "0001", "+1", "1\x009", []byte("2"), []byte{0xff}}
 		return special[number]
 	}
 	if number%257 == 0 {
@@ -59,21 +59,38 @@ func requireMetadataIndexAdoptionCost(t *testing.T, count int) {
 		t.Fatal("fixture did not retain temporary work in memory")
 	}
 	exec("DROP INDEX nft_tokens_metadata_range")
+	// Keep all declared rows and typed legacy IDs; bound each fixture call to
+	// sixteen rows and 144 bind arguments without changing transaction scope.
+	const batchRows = 16
+	const bindArguments = batchRows * 9
+	seedExecs := 0
 	seed := func(tx *sql.Tx) {
 		t.Helper()
 		statement, err := tx.Prepare(`INSERT INTO nft_tokens (collection, token_id, owner, uri, meta, name, image, minted_block, updated_block)
-		VALUES (?,?,?,?,?,?,?,?,?)
+		VALUES ` + strings.TrimSuffix(strings.Repeat("(?,?,?,?,?,?,?,?,?),", batchRows), ",") + `
 		ON CONFLICT(collection, token_id) DO UPDATE SET owner = excluded.owner, approved = NULL, uri = excluded.uri,
 			meta = excluded.meta, name = excluded.name, image = excluded.image, updated_block = excluded.updated_block`)
 		if err != nil {
 			t.Fatal(err)
 		}
 		defer statement.Close()
-		for number := 0; number < count; number++ {
-			if _, err := statement.Exec(fmt.Sprintf("collection-%031d", number%4), metadataIndexCostID(number),
-				"fixture-owner-"+strings.Repeat("0", 28), "urn:fixture:token", `{"fixture":true}`,
-				"fixture", "urn:fixture:image", number+11, number+21); err != nil {
+		owner := "fixture-owner-" + strings.Repeat("0", 28)
+		for first := 0; first < count; first += batchRows {
+			arguments := make([]any, 0, bindArguments)
+			for number := first; number < first+batchRows; number++ {
+				arguments = append(arguments, fmt.Sprintf("collection-%031d", number%4), metadataIndexCostID(number),
+					owner, "urn:fixture:token", `{"fixture":true}`, "fixture", "urn:fixture:image", number+11, number+21)
+			}
+			if len(arguments) != bindArguments {
+				t.Fatal("fixture batch changed its declared argument bound")
+			}
+			seedExecs++
+			result, err := statement.Exec(arguments...)
+			if err != nil {
 				t.Fatal(err)
+			}
+			if changed, err := result.RowsAffected(); err != nil || changed != batchRows {
+				t.Fatalf("fixture batch affected %d rows: %v", changed, err)
 			}
 		}
 		if err := statement.Close(); err != nil {
@@ -93,6 +110,20 @@ func requireMetadataIndexAdoptionCost(t *testing.T, count int) {
 		t.Fatal("legacy fixture changed its rows or already has the new index")
 	}
 	before := uriHistoryDump(t, db)
+	// These complete-table images agree in both normal/race modes at the
+	// separately qualified CFF and 7eb3aeb source revisions. Keep the original
+	// byte comparisons after every refusal, rollback and adoption below.
+	expectedTables := map[int]string{
+		4096:  "7390e0488f0cf609c03239b446ba8f29f0f416b640c5a48b35ecd490002b1e63",
+		16384: "0258337ff291525c6dc0b0336a12902f99f93c2212f736e9ce6b0da223f75be1",
+		65536: "c651e024c58d61bc282745a823216b4efbd23eaf89137acde4222529a82b94e9",
+	}
+	actualTables := fmt.Sprintf("%x", sha256.Sum256([]byte(before)))
+	if actualTables != expectedTables[count] || seedExecs != count/batchRows {
+		t.Fatalf("batched fixture changed its parent row image or call bound: rows=%d calls=%d tables=%s", count, seedExecs, actualTables)
+	}
+	t.Logf("METADATA-INDEX-FIXTURE-BATCH rows=%d batchRows=%d insertExecs=%d bindArguments=%d allTablesSHA256=%s",
+		count, batchRows, seedExecs, bindArguments, actualTables)
 	unchanged := func() {
 		t.Helper()
 		if uriHistoryDump(t, db) != before || present() {

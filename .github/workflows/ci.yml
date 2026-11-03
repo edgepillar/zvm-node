@@ -80,6 +80,10 @@ jobs:
         env:
           GOWORK: ${{ runner.temp }}/zvm-simulator-fixture/go.work
         run: go test -race -json -count=1 -timeout=5m ./cmd/zvm-node ./media ./verify
+      - name: Check bound empty-storage payload conversion with the race detector
+        env:
+          GOWORK: ${{ runner.temp }}/zvm-simulator-fixture/go.work
+        run: go test -race -json -count=1 -timeout=1m -run '^TestBoundEmptyStoragePayload$' ./node
       - name: Verify the exact test-only dependency delta and tracked source
         run: |
           python3 scripts/prepare-simulated-backend-fixture.py verify "$RUNNER_TEMP/zvm-simulator-fixture"
@@ -252,6 +256,17 @@ jobs:
           go tool test2json -p github.com/Zenoglyphs-VM/zvm-node/orderbook -t \
             "$RUNNER_TEMP/zvm-full-client-recovery.test" -test.v=test2json -test.failfast -test.timeout=7m \
             -test.run='^Test(FullClientKernelKillRecovery|OwnedFullClientKernelMarkerControls)$'
+      - name: Check empty MessagePasser cold replay and write-exit recovery with the same binary
+        working-directory: orderbook
+        env:
+          GOMAXPROCS: '2'
+          GOMEMLIMIT: 5GiB
+        run: |
+          printf 'N04_EMPTY_STORAGE_RUNTIME_BEGIN\n'
+          go tool test2json -p github.com/Zenoglyphs-VM/zvm-node/orderbook -t \
+            "$RUNNER_TEMP/zvm-full-client-recovery.test" -test.v=test2json -test.failfast -test.timeout=5m \
+            -test.run='^TestFullClientEmptyStorageRecovery$'
+          printf 'N04_EMPTY_STORAGE_RUNTIME_END\n'
       - name: Refuse tracked source drift
         run: git diff --exit-code
 

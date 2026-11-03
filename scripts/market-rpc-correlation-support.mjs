@@ -1,6 +1,7 @@
 // Owned-fixture HTTP correlation only. Nonces and existing header values never
 // enter diagnostics. A matching echo/handler record does not prove delivery.
 import {randomBytes} from 'node:crypto'
+import {readOwnedHTTP1Connections,unavailableConnectionObservation} from './market-rpc-connection-support.mjs'
 export const ownedRPCHeader = 'X-ZVM-Fixture-Request'
 export const ownedRPCQueryHeader = 'X-ZVM-Fixture-Requests'
 export const ownedRPCLimits = Object.freeze({records: 256, early: 256, scopes: 4, bindings: 512, query: 8, body: 16384, chunks: 64, timeout: 750})
@@ -172,6 +173,24 @@ export function createOwnedRPCCorrelation(origin, {nonceFactory = () => randomBy
       return await Promise.race([observation,deadline])
     } finally {clearTimeout(timer)}
   }
+  async function readConnections(fixture,selection,options={}) {
+    const selected=selections.get(selection)
+    if(!selected)return unavailableConnectionObservation('SELECTION')
+    const selectionFacts={selectionScope:selected.selectionScope,targetsTruncated:selected.truncated,maximumQuery:ownedRPCLimits.query}
+    if(!selected.requests.length)return {...unavailableConnectionObservation('NO_UNIQUE_OWNED_HEADER_ECHO'),...selectionFacts,targets:structuredClone(selected.publicTargets)}
+    const value=await readOwnedHTTP1Connections(fixture,selected.requests.map(row=>row.nonce),options)
+    const {matches,...summary}=value
+    const byTarget=new Map((matches??[]).map((row,index)=>[selected.requests[index].targetIndex,row]))
+    return {...summary,...selectionFacts,targets:selected.publicTargets.map(target=>{
+      const match=byTarget.get(target.index)
+      return {...structuredClone(target),serverConnectionStatus:match?.status??'UNAVAILABLE',connectionReason:match?.reason??value.reason,
+        HTTP1CycleBound:match?.HTTP1CycleBound??false,handlerReturned:match?.handlerReturned??null,
+        handlerReturnedNormally:match?.handlerReturnedNormally??null,serverIdleAfterHandler:match?.serverIdleAfterHandler??false,
+        connectionClosedAfterHandler:match?.connectionClosedAfterHandler??false,connectionHijackedAfterHandler:match?.connectionHijackedAfterHandler??false,
+        requestToServerHTTP1CycleCorrelationEstablished:match?.status==='MATCHED'&&!target.ambiguousSelection,
+        responseDeliveryEstablished:false,protocolSessionIdentityEstablished:false,qualifiesNavigation:false}
+    })}
+  }
   return {
     continue(request) {
       let options
@@ -225,6 +244,10 @@ export function createOwnedRPCCorrelation(origin, {nonceFactory = () => randomBy
     diagnostic:descriptor,
     select,
     read,
+    readConnections,
+    async reportConnections(fixture,selection) {
+      try {console.log('OWNED-MARKET-RPC-CONNECTION '+JSON.stringify({phase:'AFTER_ORIGINAL_CHECKS_BEFORE_OWNED_BROWSER_CLOSE',...await readConnections(fixture,selection)}))}catch{}
+    },
     summary() {return {...baseFacts,taggedRequests:tagged,fallbacks,readErrors,primaryEchoes,records:records.size,
       early:retainedScopes.reduce((total,state)=>total+state.early.size,0),scopes:retainedScopes.length,
       bindings:retainedScopes.reduce((total,state)=>total+state.bindings.size,0),

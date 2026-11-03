@@ -186,6 +186,7 @@ func executedMarketBrowserRecoveryProfile(t *testing.T, roots map[string]string,
 	rpcCorrelation := newMarketRPCCorrelations()
 	ui := http.NewServeMux()
 	ui.Handle("GET /__fixture/rpc-correlations", rpcCorrelation.lookupHandler(token))
+	ui.Handle("GET /__fixture/rpc-connections", rpcCorrelation.connectionLookupHandler(token))
 	writeJSON := func(w http.ResponseWriter, value any) {
 		w.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(w).Encode(value); err != nil {
@@ -245,7 +246,7 @@ func executedMarketBrowserRecoveryProfile(t *testing.T, roots map[string]string,
 	var requestMu sync.Mutex
 	var submitted []*orderbook.Input
 	posts := 0
-	web := httptest.NewServer(rpcCorrelation.observe(rpcProgress.observe(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	web := httptest.NewUnstartedServer(rpcCorrelation.observe(rpcProgress.observe(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost && r.URL.Path == "/api/nft/orders" {
 			body := r.Body
 			raw, err := io.ReadAll(io.LimitReader(body, (256<<10)+1))
@@ -277,13 +278,18 @@ func executedMarketBrowserRecoveryProfile(t *testing.T, roots map[string]string,
 		handler.ServeHTTP(w, r)
 	}))))
 	defer web.Close()
+	if err := rpcCorrelation.configureConnections(web.Config); err != nil {
+		t.Fatal(err)
+	}
+	web.Start()
 	input, err := json.Marshal(map[string]any{"base": web.URL, "token": token, "roots": roots,
 		"app": app, "kind": kind, "collection": f.Collection().Hex(), "exchange": f.Exchange().Hex(),
 		"seller": f.Seller().Hex(), "buyer": f.Buyer().Hex(), "chainId": f.Rollup().L2ChainID, "action": action, "actor": transport.Actor().Hex(), "payouts": f.MarketPayoutConfig(), "tokenPayment": f.TokenPaymentDescription(), "externalRoyalty": f.ExternalRoyaltyDescription(), "contractSeller": f.ContractSignatureDescription()})
 	if err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.CommandContext(ctx, "node", filepath.Join("..", "scripts", "market-execution-browser.mjs"))
+	browserContext, stopBrowser := context.WithCancel(ctx)
+	cmd := exec.CommandContext(browserContext, "node", filepath.Join("..", "scripts", "market-execution-browser.mjs"))
 	cmd.Stdin = bytes.NewReader(input)
 	stdout, stderr := &executedBrowserOutput{limit: 1 << 20}, &executedBrowserOutput{limit: 128 << 10}
 	cmd.Stdout, cmd.Stderr = stdout, stderr
@@ -292,14 +298,7 @@ func executedMarketBrowserRecoveryProfile(t *testing.T, roots map[string]string,
 	finished := make(chan error, 1)
 	joined := make(chan struct{})
 	go func() { finished <- cmd.Run(); close(joined) }()
-	defer func() {
-		cancel()
-		select {
-		case <-joined:
-		case <-time.After(5 * time.Second):
-			t.Error("owned signed-browser driver was not joined")
-		}
-	}()
+	defer finishMarketBrowser(t, stopBrowser, joined, joinRelayer, cancel)
 	expectedPhases := []string{"bind", "ordered", "mined", "replacement", "restored"}
 	batch := action == "batch" || action == "partial-batch"
 	if action == "partial-batch" {

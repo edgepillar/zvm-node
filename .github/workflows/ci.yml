@@ -127,6 +127,8 @@ jobs:
         run: node scripts/market-navigation-support.test.mjs
       - name: Check bounded owned RPC progress diagnostics without SDK or network
         run: node scripts/market-rpc-progress-support.test.mjs
+      - name: Check bounded HTTP1 connection snapshot controls without SDK or network
+        run: node scripts/market-rpc-connection-support.test.mjs
       - name: Check fixture connection restoration without SDK or network
         run: node scripts/market-wallet-connection-support.test.mjs
       - name: Check bounded immutable snapshot reuse without SDK or network

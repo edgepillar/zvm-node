@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -18,6 +19,8 @@ const marketRPCCorrelationMaximumActive = 32
 const marketRPCCorrelationMaximumQuery = 8
 
 type marketRPCCorrelationRecord struct {
+	connection                            *marketRPCHTTP1Cycle
+	connectionReason                      string
 	ctx                                   context.Context
 	returned, normal, canceled, ambiguous bool
 }
@@ -45,14 +48,16 @@ type marketRPCCorrelationSnapshot struct {
 // It preserves both HTTP arguments and the original handler's panic/result.
 // It adds one response header for a tracked request; it observes no body/status.
 type marketRPCCorrelations struct {
-	mu       sync.Mutex
-	records  map[string]*marketRPCCorrelationRecord
-	active   int
-	overflow bool
+	mu                 sync.Mutex
+	records            map[string]*marketRPCCorrelationRecord
+	active             int
+	overflow           bool
+	connections        map[net.Conn]*marketRPCConnection
+	connectionOverflow bool
 }
 
 func newMarketRPCCorrelations() *marketRPCCorrelations {
-	return &marketRPCCorrelations{records: make(map[string]*marketRPCCorrelationRecord)}
+	return &marketRPCCorrelations{records: make(map[string]*marketRPCCorrelationRecord), connections: make(map[net.Conn]*marketRPCConnection)}
 }
 func marketRPCNonce(value string) bool {
 	if len(value) != 32 {
@@ -88,6 +93,9 @@ func (p *marketRPCCorrelations) finish(row *marketRPCCorrelationRecord, normal b
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	row.returned, row.normal, row.canceled = true, normal, row.ctx.Err() != nil
+	if row.connection != nil {
+		row.connection.returned = true
+	}
 	row.ctx = nil
 	p.active--
 }
@@ -103,6 +111,7 @@ func (p *marketRPCCorrelations) observe(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
+		p.bindConnection(row, r)
 		w.Header().Set(marketRPCCorrelationHeader, values[0])
 		normal := false
 		defer func() { p.finish(row, normal) }()

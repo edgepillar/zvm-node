@@ -55,3 +55,11 @@ remain. This capacity change has no measured runtime memory or elapsed gain.
 Previous aggregate flags do not establish which limit caused a historical
 truncation or explain an earlier browser failure. New counters describe only
 the candidate execution that produced them.
+
+An independent, bounded HTTP/1.1 connection-lifecycle snapshot is described in
+[Owned HTTP/1.1 connection diagnostics](MARKET_RPC_CONNECTION_DIAGNOSTICS.md).
+It preserves this original handler-correlation schema and all original
+financial/navigation gates. Native post-handler idle/closed/hijacked facts are
+not browser body-delivery or protocol-session proof and do not explain a prior
+failure. The browser driver also owns separate cancellation and joins its
+Relayer before cancelling the shared scope; original exit checks remain.

@@ -162,6 +162,8 @@ func (p *marketRPCProgress) log(t *testing.T) {
 
 func TestMarketRPCProgress(t *testing.T) {
 	requireMarketRPCCorrelation(t)
+	requireMarketRPCConnections(t)
+	requireMarketBrowserShutdown(t)
 	t.Run("unobserved-routes", func(t *testing.T) {
 		p := newMarketRPCProgress()
 		for _, route := range []struct{ method, path string }{{"GET", "/rpc"}, {"POST", "/other"}} {

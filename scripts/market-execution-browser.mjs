@@ -905,7 +905,9 @@ try {
     message: document.querySelector('main')?.textContent.slice(-700)})).catch(() => null)
   process.exitCode = 1
 } finally {
-  await rpcCorrelation.report(fixture, navigation.ownedRPCSelection())
+  const rpcSelection=navigation.ownedRPCSelection()
+  await rpcCorrelation.report(fixture,rpcSelection)
+  await rpcCorrelation.reportConnections(fixture,rpcSelection)
   releaseApprovalBuyer()
   quoteArmed = false
   if (heldQuoteRequest) {const request = heldQuoteRequest; heldQuoteRequest = null; await observeOwnedRequestAction(request, 'CONTINUE', () => rpcCorrelation.continue(request)).catch(() => {})}

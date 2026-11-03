@@ -119,3 +119,46 @@ child make three separately observed stops; no new profile, service or build is
 added. Standalone compiler source qualification does not transfer execution to
 this integration: all original Node native, full-client, SQL, financial, wallet
 phase and passive HTTP-connection oracles require fresh exact-source CI.
+
+## Selected real vendor compiler profile
+
+The added profile uses the three existing production-chain Linux amd64 pins:
+Solidity 0.5.16, 0.6.6 and 0.8.30. The reviewed manifest is embedded in the test
+binary. A bounded CI-only downloader first requires both the official binary
+host and the publisher's GitHub release list to match every selected entry.
+These are two locations of publisher metadata, not independent publisher or
+chain authority. Each ELF is streamed once, with a 32 MiB cap, a 60-second
+interrupting transport deadline, exact SHA-256 verification and no redirects,
+retry or alternate download host. Failed/partial CI inputs remain visible.
+
+The original thirteen controlled-compiler events and eleven joined service
+lifetimes execute unchanged before this profile. The same production binary,
+test harness, JSON converter and pinned Go image are reused. Only three further
+explicit read-only vendor files are mounted into a fresh runtime with the same
+512 MiB memory, zero-swap, two-CPU, 64-task, 64 MiB tmpfs, unprivileged UID/GID,
+read-only root, no capabilities, no-new-privileges and no external network.
+Source, build cache, Docker socket and synthetic host canaries stay outside it.
+
+One additional actual solcd service serves three standard-JSON requests through
+the Node's original RemoteRunner. The test copies pinned bytes in bounded
+chunks to its fresh tmpfs cache, limited to three files and 48 MiB. The normal
+production loader checks them; no compiler download is served at runtime. One
+release-list request is shared. A small content-only contract targets the common
+Byzantium EVM version. Each result must contain the exact vendor metadata and
+ABI. Its actual creation code must install the returned runtime in the pinned
+in-memory EVM; the ABI call must return seven and an undeclared selector must
+revert. The actual service is stopped and joined, host canaries must remain
+unchanged and OOM counters must remain zero. Four new parent/subtest terminal
+events are required in this separate profile; its prerequisite skip in other
+jobs is not execution evidence.
+
+This is selected Linux amd64 compiler and output-behavior qualification, not
+complete application/default-scale workload, vendor supply-chain authority,
+cross-process cache ownership, escaped-descendant or parent-crash containment,
+other-platform, deployment or operator acceptance. The separate source-only
+containment contract and all original forty-two acceptance requirements remain
+open. This guide is source intent; fresh exact-source CI is required for any
+execution claim.
+
+Sources: [official compiler releases](https://binaries.soliditylang.org/linux-amd64/list.json)
+and [publisher release metadata](https://github.com/ethereum/solc-bin/blob/gh-pages/linux-amd64/list.json).

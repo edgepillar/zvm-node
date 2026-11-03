@@ -215,6 +215,10 @@ type compilerProfileProcess struct {
 }
 
 func (f *compilerProfileFixture) start(binary string, cacheFiles int) *compilerProfileProcess {
+	return f.startBudgeted(binary, cacheFiles, 4194304, 500*time.Millisecond)
+}
+
+func (f *compilerProfileFixture) startBudgeted(binary string, cacheFiles int, cacheBytes int64, timeout time.Duration) *compilerProfileProcess {
 	f.t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -222,8 +226,8 @@ func (f *compilerProfileFixture) start(binary string, cacheFiles int) *compilerP
 	}
 	address := listener.Addr().String()
 	_ = listener.Close()
-	cmd := exec.Command(binary, "solcd", "-listen", address, "-solc-dir", f.dir, "-solc-url", f.url, "-workers", "1", "-timeout", "500ms",
-		"-max-output-bytes", "65536", "-max-stderr-bytes", "4096", "-max-cache-bytes", "4194304", "-max-cache-files", strconv.Itoa(cacheFiles))
+	cmd := exec.Command(binary, "solcd", "-listen", address, "-solc-dir", f.dir, "-solc-url", f.url, "-workers", "1", "-timeout", timeout.String(),
+		"-max-output-bytes", "65536", "-max-stderr-bytes", "4096", "-max-cache-bytes", strconv.FormatInt(cacheBytes, 10), "-max-cache-files", strconv.Itoa(cacheFiles))
 	cmd.Env = []string{"PATH=/usr/bin:/bin", "TMPDIR=/tmp", "GOMAXPROCS=2", "GOMEMLIMIT=128MiB", "N01_PARENT_SENTINEL=synthetic-parent-only"}
 	logs := new(compilerProfileLog)
 	cmd.Stdout = logs

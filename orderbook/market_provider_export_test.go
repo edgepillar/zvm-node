@@ -45,6 +45,7 @@ type ExecutedMarketProviderFixture struct {
 	credit                                                                              *executedCreditTransfer
 	tokenPayment                                                                        *executedTokenPayment
 	tokenApproval                                                                       *executedTokenApproval
+	walletPublicationGate                                                               *executedWalletPublicationGate
 }
 
 func NewExecutedMarketProviderBrowserFixture(t *testing.T, kind string) (*ExecutedMarketFixture, *ExecutedMarketProviderFixture) {

@@ -44,6 +44,7 @@ func (p *ExecutedMarketProviderFixture) sequencedSourceRPC(w http.ResponseWriter
 	p.f.r.nomMu.RUnlock()
 	var result any
 	var failure error
+	var held *executedWalletPublicationGate
 	p.mu.Lock()
 	copyBlock := func(index int) *znn.AccountBlock {
 		leg := &p.providerLegs()[index]
@@ -122,6 +123,9 @@ func (p *ExecutedMarketProviderFixture) sequencedSourceRPC(w http.ResponseWriter
 		}
 		leg.published = &block
 		p.publications++
+		if index == 0 {
+			held = p.walletPublicationGate
+		}
 	default:
 		failure = errors.New("undeclared sequenced provider source operation: " + call.Method)
 	}
@@ -129,6 +133,10 @@ func (p *ExecutedMarketProviderFixture) sequencedSourceRPC(w http.ResponseWriter
 		p.unexpected++
 	}
 	p.mu.Unlock()
+	if held != nil {
+		held.hold(r.Context())
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	envelope := map[string]any{"jsonrpc": "2.0", "id": call.ID, "result": result}
 	if failure != nil {

@@ -39,6 +39,11 @@ type executedDurableAdmissionSnapshot struct {
 
 func durableMarketSnapshot(t *testing.T, url string, rawBytes int, active int) executedDurableAdmissionSnapshot {
 	t.Helper()
+	return durableMarketRetainedSnapshot(t, url, int64(rawBytes*active), int64(rawBytes), active, 1)
+}
+
+func durableMarketRetainedSnapshot(t *testing.T, url string, activeRawBytes, retainedRawBytes int64, active, retainedRecords int) executedDurableAdmissionSnapshot {
+	t.Helper()
 	response, err := (&http.Client{Timeout: time.Second}).Get(url + "/status")
 	if err != nil {
 		t.Fatal("actual durable Relayer status was unavailable")
@@ -50,12 +55,12 @@ func durableMarketSnapshot(t *testing.T, url string, rawBytes int, active int) e
 		status.Ready == nil || !*status.Ready || status.RecoveryStatus != "complete" || status.AdmissionMode != "local-sync" ||
 		status.AdmissionDurable == nil || !*status.AdmissionDurable || status.Queued == nil || status.PostedPending == nil ||
 		*status.Queued < 0 || *status.PostedPending < 0 || *status.Queued+*status.PostedPending != active ||
-		status.RetainedRawBytes == nil || *status.RetainedRawBytes != int64(rawBytes*active) || status.AdmissionStorage == nil {
+		status.RetainedRawBytes == nil || *status.RetainedRawBytes != activeRawBytes || status.AdmissionStorage == nil {
 		t.Fatal("actual durable Relayer readiness or active queue differs")
 	}
 	store := status.AdmissionStorage
-	if store.Healthy == nil || !*store.Healthy || store.RetainedRecords == nil || *store.RetainedRecords != 1 ||
-		store.ActiveRecords == nil || *store.ActiveRecords != active || store.RetainedRawBytes == nil || *store.RetainedRawBytes != int64(rawBytes) ||
+	if store.Healthy == nil || !*store.Healthy || store.RetainedRecords == nil || *store.RetainedRecords != retainedRecords ||
+		store.ActiveRecords == nil || *store.ActiveRecords != active || store.RetainedRawBytes == nil || *store.RetainedRawBytes != retainedRawBytes ||
 		store.MaxRecords == nil || *store.MaxRecords != 4 || store.MaxRawBytes == nil || *store.MaxRawBytes != 65536 {
 		t.Fatal("actual durable Relayer store ownership, retained bytes or explicit limits differ")
 	}
@@ -104,6 +109,11 @@ func (p *executedRelayerProcess) kernelKill(t *testing.T, parent context.Context
 // No production admission-store decoder or recovery helper supplies this oracle.
 func inspectQueuedWalletWire(t *testing.T, directory, config string, hash common.Hash, expected []byte) string {
 	t.Helper()
+	return inspectWalletAdmissionWire(t, directory, config, hash, expected, 0)
+}
+
+func inspectWalletAdmissionWire(t *testing.T, directory, config string, hash common.Hash, expected []byte, phase byte) string {
+	t.Helper()
 	info, err := os.Lstat(filepath.Join(directory, "owner-v1"))
 	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0077 != 0 || info.Size() > 256 {
 		t.Fatal("durable wallet owner record refused")
@@ -146,9 +156,9 @@ func inspectQueuedWalletWire(t *testing.T, directory, config string, hash common
 		t.Fatal("durable wallet actual queued record unavailable")
 	}
 	count := int(binary.BigEndian.Uint32(value[8:12]))
-	if count != len(expected) || len(value) != 37+count+sha256.Size || value[34] != 0 || value[35] != 0 || value[36] != 0 ||
+	if count != len(expected) || len(value) != 37+count+sha256.Size || value[34] != 0 || value[35] != 0 || value[36] != phase ||
 		!bytes.Equal(value[37:37+count], expected) {
-		t.Fatal("durable wallet persisted wire bytes or queued phase differ")
+		t.Fatal("durable wallet persisted wire bytes or declared phase differ")
 	}
 	digest := sha256.New()
 	digest.Write(domain)

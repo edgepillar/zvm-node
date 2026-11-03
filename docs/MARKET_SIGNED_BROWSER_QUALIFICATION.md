@@ -634,3 +634,15 @@ retained signed-wire checks and the same complete financial predicates. Source
 counts are 52 profiles, 1,244 checks, 70 transactions/publications and 79 CLI
 lifetimes until verified by fresh logs; see
 [Queued wallet ACK recovery](MARKET_DURABLE_WALLET_RECOVERY.md).
+
+The publication-lifecycle extension reuses all nine durable wallet profiles and
+their complete original financial paths. It additionally requires actual kills
+at accepted publication with its RPC response withheld, restored posted state,
+and the second ordinary acknowledged publication. Independent stopped-store
+wire checks and complete exact-source history must bind each restart without
+duplicate wallet submissions or publications. No extra browser profile or build
+is added: the source requires the same 52 profiles/1,244 checks/70 transactions
+and publications, with 106 joined Relayer CLI lifetimes and 36 SIGKILL joins.
+Those are fresh-execution requirements, not results transferred from the earlier
+79-lifetime milestone. Main step/job deadlines and financial/navigation oracles
+are unchanged. See [Durable wallet publication recovery](MARKET_DURABLE_WALLET_RECOVERY.md).

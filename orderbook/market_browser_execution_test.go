@@ -171,7 +171,10 @@ func executedMarketBrowserRecoveryProfile(t *testing.T, roots map[string]string,
 	if durableACK && action != "partial-batch" && !f.TokenApprovalRequired() {
 		t.Fatal("durable ACK requires a declared two-transaction browser profile")
 	}
-	relayerURL, joinRelayer, reopenRelayer, recoverQueuedACK := startProductionMarketRelayerWithAdmission(t, ctx, f, transport.SourceURL(), durableACK)
+	if durableACK {
+		transport.HoldWalletPublicationACK(t)
+	}
+	relayerURL, joinRelayer, reopenRelayer, recoverQueuedACK, recoverPublication := startProductionMarketRelayerWithAdmission(t, ctx, f, transport.SourceURL(), durableACK)
 	defer joinRelayer()
 	transport.UseRelayer(t, relayerURL)
 	type phaseRequest struct {
@@ -347,6 +350,7 @@ func executedMarketBrowserRecoveryProfile(t *testing.T, roots map[string]string,
 				if durableACK {
 					hash, raw := transport.QueuedWalletACK(t)
 					recoverQueuedACK(hash, raw)
+					recoverPublication(transport, 0)
 				}
 				transport.BindTokenApproval(t, ctx)
 				if durableACK {
@@ -373,6 +377,7 @@ func executedMarketBrowserRecoveryProfile(t *testing.T, roots map[string]string,
 				if durableACK {
 					hash, raw := transport.QueuedWalletACK(t)
 					recoverQueuedACK(hash, raw)
+					recoverPublication(transport, 0)
 				}
 				transport.BindBatchCancellation(t, ctx)
 				if durableACK {
@@ -399,6 +404,9 @@ func executedMarketBrowserRecoveryProfile(t *testing.T, roots map[string]string,
 				batchStage = 1
 			case "ordered":
 				transport.BindPublishedTransaction(t, ctx)
+				if durableACK {
+					recoverPublication(transport, 1)
+				}
 				heights := []uint64{transport.ActionHeight(), transport.LastHeight()}
 				if action == "partial-batch" || f.TokenApprovalRequired() {
 					heights = []uint64{transport.ActionHeight() + 1, transport.LastHeight()}

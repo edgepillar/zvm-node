@@ -61,11 +61,11 @@ func (p *executedRelayerProcess) stop(t *testing.T, parent context.Context) int 
 // original browser profiles and an actual reopen between two wallet actions.
 func startProductionMarketRelayer(t *testing.T, parent context.Context, f *orderbook.ExecutedMarketFixture, source string) (string, func() int, func()) {
 	t.Helper()
-	url, join, reopen, _ := startProductionMarketRelayerWithAdmission(t, parent, f, source, false)
+	url, join, reopen, _, _ := startProductionMarketRelayerWithAdmission(t, parent, f, source, false)
 	return url, join, reopen
 }
 
-func startProductionMarketRelayerWithAdmission(t *testing.T, parent context.Context, f *orderbook.ExecutedMarketFixture, source string, durable bool) (string, func() int, func(), func(common.Hash, []byte)) {
+func startProductionMarketRelayerWithAdmission(t *testing.T, parent context.Context, f *orderbook.ExecutedMarketFixture, source string, durable bool) (string, func() int, func(), func(common.Hash, []byte), func(*orderbook.ExecutedMarketProviderFixture, int)) {
 	t.Helper()
 	binary := os.Getenv("ZVM_BROWSER_RELAYER_BINARY")
 	info, err := os.Stat(binary)
@@ -118,6 +118,7 @@ func startProductionMarketRelayerWithAdmission(t *testing.T, parent context.Cont
 	}
 	url := "http://" + address
 	var current *executedRelayerProcess
+	lifetimes := 0
 	launch := func(wait string) *executedRelayerProcess {
 		t.Helper()
 		actual, err := os.Stat(binary)
@@ -149,6 +150,7 @@ func startProductionMarketRelayerWithAdmission(t *testing.T, parent context.Cont
 			cancel()
 			t.Fatal(err)
 		}
+		lifetimes++
 		current = process // Cleanup can join even a failed readiness attempt.
 		go func() { process.finished <- cmd.Wait() }()
 		client := &http.Client{Timeout: 200 * time.Millisecond}
@@ -188,9 +190,11 @@ func startProductionMarketRelayerWithAdmission(t *testing.T, parent context.Cont
 	reopens := 0
 	queuedRecovered := false
 	var queuedWire []byte
+	publicationRecoveries := 0
+	lifecycle := &marketDurableWalletLifecycle{parent: parent, endpoint: url, directory: directory, config: config, current: &current, launch: launch, lifetimes: &lifetimes}
 	reopen := func() {
 		t.Helper()
-		if reopens != 0 || (durable && !queuedRecovered) || join() != 1 {
+		if reopens != 0 || (durable && (!queuedRecovered || publicationRecoveries != 1)) || join() != 1 {
 			t.Fatal("declared single relayer reopen did not join its first process")
 		}
 		current = launch("10ms")
@@ -224,7 +228,7 @@ func startProductionMarketRelayerWithAdmission(t *testing.T, parent context.Cont
 		marker := "ACTUAL-MARKET-RELAYER-REOPEN "
 		if durable {
 			marker = "ACTUAL-MARKET-DURABLE-EXECUTED-RECOVERY "
-			recordValue["actualProcessLifetimesSoFar"] = 3
+			recordValue["actualProcessLifetimesSoFar"] = lifetimes
 			recordValue["admissionMode"] = "local-sync"
 			recordValue["originalQueuedACKKernelKillJoined"] = true
 			recordValue["retainedAuditRecords"] = 1
@@ -252,6 +256,8 @@ func startProductionMarketRelayerWithAdmission(t *testing.T, parent context.Cont
 		after := durableMarketSnapshot(t, url, len(raw), 1)
 		queuedRecovered = true
 		queuedWire = append([]byte(nil), raw...)
+		lifecycle.firstHash = hash
+		lifecycle.firstRaw = append([]byte(nil), raw...)
 		record, err := json.Marshal(map[string]any{"source": orderbook.ExecutedMarketRelayerSource,
 			"admissionMode": "local-sync", "actualOriginalWalletHashACK": true, "queuedBeforeKill": 1, "postedBeforeKill": 0,
 			"publicationBeforeKill": 0, "actualKernelSignal": 9, "killedProcessJoined": true, "actualQueuedStoreWireVerified": true,
@@ -266,6 +272,15 @@ func startProductionMarketRelayerWithAdmission(t *testing.T, parent context.Cont
 		}
 		t.Log("ACTUAL-MARKET-DURABLE-QUEUED-ACK-RECOVERY " + string(record))
 	}
+	recoverPublication := func(transport *orderbook.ExecutedMarketProviderFixture, index int) {
+		t.Helper()
+		if !durable || !queuedRecovered || index < 0 || index > 1 || publicationRecoveries != index || reopens != index {
+			t.Fatal("undeclared durable wallet publication recovery order")
+		}
+		lifecycle.recover(t, transport, index)
+		publicationRecoveries++
+	}
+
 	record, err := json.Marshal(map[string]any{"source": orderbook.ExecutedMarketRelayerSource, "core": "29e6d9b30be94de3772c850c7a1e9811585a8833",
 		"sha256": hex.EncodeToString(hash.Sum(nil)), "go": build.GoVersion, "actualUnmodifiedRelayerCLI": true, "loopbackOnly": true, "publicDevnetAccount": true,
 		"repository": orderbook.ExecutedMarketRelayerRepository, "embeddedExactVCSRevisionAndCleanTreeVerified": true})
@@ -273,5 +288,5 @@ func startProductionMarketRelayerWithAdmission(t *testing.T, parent context.Cont
 		t.Fatal(err)
 	}
 	t.Log("ACTUAL-MARKET-RELAYER-BUILD " + string(record))
-	return url, join, reopen, recoverQueued
+	return url, join, reopen, recoverQueued, recoverPublication
 }

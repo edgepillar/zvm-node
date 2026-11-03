@@ -132,6 +132,8 @@ jobs:
           go-version-file: go.mod
       - name: Check bounded protocol navigation controls without SDK or network
         run: node scripts/market-navigation-support.test.mjs
+      - name: Reuse only complete observed pre-navigation quiet without relaxing post-navigation waits
+        run: node scripts/ci-market-quiet-reuse.mjs
       - name: Require earlier-load completion before navigation under the same deadline
         run: node scripts/ci-market-navigation-transition.mjs
       - name: Require the exact header-only failure and terminal-load regression without SDK or network

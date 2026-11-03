@@ -181,36 +181,38 @@ export function createNavigationRequestTracker(session, page, rpcCorrelation) {
         ...(rpcCorrelation ? {ownedRPCCorrelation: hook('diagnostic', entry)} : {}),
         pageRequestActionMatches: pageLifecycle?.matchesActions(id, url, method) ?? null}
     })})
+  const waitForQuiet = (deadline, quietMilliseconds, reuseObservedQuiet) => {
+    assert.ok(Number.isFinite(deadline) && quietMilliseconds > 0)
+    const began = reuseObservedQuiet ? changed : performance.now()
+    return new Promise((resolve, reject) => {
+      let timer, settled = false
+      const end = error => {
+        if (settled) return
+        settled = true; clearTimeout(timer); subscribers.delete(check)
+        if (error) reject(error); else resolve()
+      }
+      const check = () => {
+        clearTimeout(timer)
+        const now = performance.now(), remaining = deadline - now
+        if (closed || session.detached) return end(new Error('navigation page closed before network quiet'))
+        if (broken) return end(new Error(broken))
+        if (remaining <= 0) {
+          const value = diagnostic()
+          console.log('NAVIGATION-NETWORK-DEADLINE '+JSON.stringify(value))
+          return end(new Error('original navigation deadline elapsed; network=' + JSON.stringify(value)))
+        }
+        const quietRemaining = quietMilliseconds - (now - Math.max(changed, began))
+        if (active.size === 0 && quietRemaining <= 0) return end()
+        timer = setTimeout(check, Math.max(1, Math.min(remaining, active.size ? remaining : quietRemaining)))
+      }
+      subscribers.add(check); check()
+    })
+  }
   return {
     close, diagnostic,
     ownedRPCEntries() {return [...active.values()]},
-    wait(deadline, quietMilliseconds = 100) {
-      assert.ok(Number.isFinite(deadline) && quietMilliseconds > 0)
-      const began = performance.now()
-      return new Promise((resolve, reject) => {
-        let timer, settled = false
-        const end = error => {
-          if (settled) return
-          settled = true; clearTimeout(timer); subscribers.delete(check)
-          if (error) reject(error); else resolve()
-        }
-        const check = () => {
-          clearTimeout(timer)
-          const now = performance.now(), remaining = deadline - now
-          if (closed || session.detached) return end(new Error('navigation page closed before network quiet'))
-          if (broken) return end(new Error(broken))
-          if (remaining <= 0) {
-            const value = diagnostic()
-            console.log('NAVIGATION-NETWORK-DEADLINE '+JSON.stringify(value))
-            return end(new Error('original navigation deadline elapsed; network=' + JSON.stringify(value)))
-          }
-          const quietRemaining = quietMilliseconds - (now - Math.max(changed, began))
-          if (active.size === 0 && quietRemaining <= 0) return end()
-          timer = setTimeout(check, Math.max(1, Math.min(remaining, active.size ? remaining : quietRemaining)))
-        }
-        subscribers.add(check); check()
-      })
-    },
+    wait(deadline, quietMilliseconds = 100) {return waitForQuiet(deadline, quietMilliseconds, false)},
+    beforeNavigation(deadline, quietMilliseconds = 100) {return waitForQuiet(deadline, quietMilliseconds, true)},
   }
 }
 
@@ -261,7 +263,7 @@ export function boundedNavigation(origin, {rpcCorrelation = null} = {}) {
       try {
         const tracker = await withinDeadline(observeNavigationRequests(page, rpcCorrelation), deadline)
         trackers.add(tracker)
-        await tracker.wait(deadline, quietMilliseconds)
+        await tracker.beforeNavigation(deadline, quietMilliseconds)
         const before = tracker.diagnostic().documentRequestsStarted
         const remaining = deadline-performance.now()
         assert.ok(remaining > 0, 'original navigation deadline elapsed')

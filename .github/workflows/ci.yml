@@ -84,6 +84,10 @@ jobs:
         env:
           GOWORK: ${{ runner.temp }}/zvm-simulator-fixture/go.work
         run: go test -race -json -count=1 -timeout=1m -run '^TestBoundEmptyStoragePayload$' ./node
+      - name: Check configured command payload selection and child shutdown with the race detector
+        env:
+          GOWORK: ${{ runner.temp }}/zvm-simulator-fixture/go.work
+        run: go test -race -json -count=1 -timeout=1m ./nodecmd
       - name: Verify the exact test-only dependency delta and tracked source
         run: |
           python3 scripts/prepare-simulated-backend-fixture.py verify "$RUNNER_TEMP/zvm-simulator-fixture"

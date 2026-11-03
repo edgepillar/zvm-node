@@ -94,7 +94,7 @@ func Run(args []string, ext ...Extender) error {
 	ctx, cancel := service.SignalContext()
 	defer cancel()
 
-	eng, err := service.WaitFor(ctx, "op-geth engine", func() (*l2.Engine, error) { return l2.DialEngine(ctx, *engineURL, secret) })
+	eng, err := service.WaitFor(ctx, "op-geth engine", func() (*l2.Engine, error) { return l2.DialEngineForConfig(ctx, *engineURL, secret, cfg) })
 	if err != nil {
 		return err
 	}

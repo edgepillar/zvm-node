@@ -10,7 +10,6 @@ import (
 	"io/fs"
 	"net/http"
 	"os"
-	"os/exec"
 	"strings"
 	"sync"
 	"time"
@@ -148,7 +147,7 @@ func (r *LocalRunner) Compile(ctx context.Context, compiler string, input []byte
 		return nil, err
 	}
 	defer os.RemoveAll(dir)
-	cmd := exec.CommandContext(cctx, bin, "--standard-json")
+	cmd := newCompilerCommand(cctx, bin, "--standard-json")
 	cmd.Dir = dir
 	cmd.Env = []string{}
 	cmd.Stdin = bytes.NewReader(input)
@@ -157,7 +156,7 @@ func (r *LocalRunner) Compile(ctx context.Context, compiler string, input []byte
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	// Bound inherited pipe descriptors too if the compiler starts a child.
 	cmd.WaitDelay = time.Second
-	err = cmd.Run()
+	err = runCompilerCommand(cctx, cmd)
 	if stdout.exceeded || stderr.exceeded {
 		return nil, fmt.Errorf("solc %s: %w", build.LongVersion, ErrCompilerOutputLimit)
 	}

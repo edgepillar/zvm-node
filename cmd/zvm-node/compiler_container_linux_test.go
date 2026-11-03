@@ -167,7 +167,8 @@ func newCompilerProfileFixture(t *testing.T, mode string) *compilerProfileFixtur
 	case "stderr":
 		script += "while :; do printf 0123456789abcdef >&2; done\n"
 	case "deadline":
-		script += "printf 1 > '" + f.marker + "'\nexec /bin/sleep 30\n"
+		quoted := "'" + strings.ReplaceAll(f.marker, "'", "'\\''") + "'"
+		script += "/bin/sleep 3 </dev/null >/dev/null 2>&1 &\nchild=$!\nprintf '%s %s\\n' \"$$\" \"$child\" > " + quoted + "\n/bin/cat /proc/\"$child\"/stat >> " + quoted + "\nwait \"$child\"\n"
 	case "large-success":
 		script += "printf '{\"contracts\":{},\"padding\":\"" + strings.Repeat("x", 4096) + "\"}'\n"
 	case "isolation":
@@ -315,6 +316,67 @@ func compilerProfileRecord(t *testing.T, record map[string]any) {
 	t.Log(string(raw))
 }
 
+// compilerProfileGroupStopped checks a kernel record written by the actual
+// compiler before its deadline, then requires that same-group child to be dead.
+// A zombie is terminated but is deliberately not claimed as an adopted join.
+func compilerProfileGroupStopped(t *testing.T, marker string) {
+	t.Helper()
+	raw, err := os.ReadFile(marker)
+	if err != nil || len(raw) > 4096 {
+		t.Fatal("actual compiler child ownership record missing")
+	}
+	lines := strings.SplitN(string(raw), "\n", 2)
+	var parent, child int
+	if len(lines) != 2 {
+		t.Fatal("actual compiler child ownership record incomplete")
+	}
+	if count, _ := fmt.Sscanf(lines[0], "%d %d", &parent, &child); count != 2 || parent <= 1 || child <= 1 || parent == child {
+		t.Fatal("actual compiler child identity invalid")
+	}
+	stateGroup := func(value []byte) (string, int) {
+		end := strings.LastIndexByte(string(value), ')')
+		if end < 0 {
+			t.Fatal("actual compiler child kernel state missing")
+		}
+		fields := strings.Fields(string(value[end+1:]))
+		if len(fields) < 3 {
+			t.Fatal("actual compiler child kernel state incomplete")
+		}
+		group, err := strconv.Atoi(fields[2])
+		if err != nil {
+			t.Fatal("actual compiler child kernel group invalid")
+		}
+		return fields[0], group
+	}
+	state, group := stateGroup([]byte(lines[1]))
+	if group != parent || state == "Z" || state == "X" {
+		t.Fatal("actual compiler did not record a live owned same-group child")
+	}
+	deadline := time.Now().Add(300 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		current, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", child))
+		if errors.Is(err, os.ErrNotExist) || errors.Is(err, syscall.ESRCH) {
+			return
+		}
+		if err != nil {
+			time.Sleep(time.Millisecond)
+			continue
+		}
+		if len(current) > 4096 {
+			t.Fatal("actual compiler child stop could not be established")
+		}
+		state, group = stateGroup(current)
+		if group != parent {
+			t.Fatal("actual compiler child escaped its declared group")
+		}
+		if state == "Z" || state == "X" {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("actual solcd same-group child stop was not established within the original observation bound")
+}
+
 func TestCompilerServiceContainerProfile(t *testing.T) {
 	if os.Getenv("ZVM_N01_CONTAINER_PROFILE") != "1" {
 		t.Skip("requires the explicit actual solcd kernel-isolation job")
@@ -397,12 +459,14 @@ func TestCompilerServiceContainerProfile(t *testing.T) {
 		if elapsed > 2*time.Second {
 			t.Fatal("compiler timeout exceeded declared bound")
 		}
+		compilerProfileGroupStopped(t, f.marker)
 		status, _, err = compilerProfileRequest(p, f.version)
 		if err != nil || status != 504 {
 			t.Fatal("timed-out compiler retained its request slot")
 		}
+		compilerProfileGroupStopped(t, f.marker)
 		p.stop(t)
-		compilerProfileRecord(t, map[string]any{"case": "actual_solcd_deadline_and_backpressure", "busy_HTTP_status": 503, "deadline_HTTP_status": 504, "status_reachable": true, "slot_released": true, "elapsed_milliseconds": elapsed.Milliseconds(), "service_joined": true})
+		compilerProfileRecord(t, map[string]any{"case": "actual_solcd_deadline_and_backpressure", "actual_same_group_children_stopped": 2, "leader_identity_retained_until_group_stop": true, "escaped_or_adopted_descendants_qualified": false, "busy_HTTP_status": 503, "deadline_HTTP_status": 504, "status_reachable": true, "slot_released": true, "elapsed_milliseconds": elapsed.Milliseconds(), "service_joined": true})
 	})
 	t.Run("logical_cache_exhaustion", func(t *testing.T) {
 		f := newCompilerProfileFixture(t, "success")

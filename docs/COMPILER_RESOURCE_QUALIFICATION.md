@@ -61,3 +61,61 @@ The combined Node source also declares five additional actual-service lifetimes
 through the same RemoteRunner used by the Node. See
 [Compiler service failure boundary](COMPILER_SERVICE_PROTOCOL.md). The original
 six-lifetime profile and its independent evidence remain unchanged.
+
+## Linux compiler process groups
+
+Each Linux invocation starts its compiler in a fresh process group. Caller
+cancellation, deadline and output overflow stop that group, including ordinary
+same-group children whose standard descriptors are already closed. Normal
+compiler exit also stops remaining same-group children before output/slot return.
+The existing input/output/stderr limits, empty environment, temporary working
+directory, concurrency limit and one-second inherited-pipe bound remain.
+
+The runner first observes leader exit with `waitid(WEXITED | WNOWAIT)`. It keeps
+that direct child unreaped until the one group-stop operation completes, then
+calls `Cmd.Wait` to reap the leader and join its pipe copies. A non-reaping
+ownership check precedes group signaling; zero and broadcast group IDs are
+refused. Group-stop/observation errors never become successful cleanup. This
+ordering avoids sending a late group signal after `Cmd.Wait` releases the
+leader identity for reuse. The observation goroutine is joined on every
+successful launch. Other platforms retain their existing direct-child behavior.
+
+Native tests cover normal exit with inherited and closed child descriptors,
+caller cancellation, deadlines, both output limits, independent concurrent
+compiler groups and cancelled/failed launches. Children have a separate finite
+self deadline so a failed regression cannot leave a long-lived fixture. The
+actual isolated service profile also requires two deadline child stops while
+retaining every original status, backpressure, slot/cache/isolation and six
+service-lifetime oracle. It reuses the existing production binary and image.
+
+This is ordinary same-process-group cleanup, not complete hostile descendant
+containment. A child can leave the group; adoption/reaping of grandchildren,
+per-invocation kernel containment, parent crashes, vendor compilers, other
+platforms and production operator acceptance remain separate open requirements.
+A terminated zombie observation is not claimed as a joined adopted process.
+The source still requires fresh exact-head CI; this guide is not execution proof.
+
+References: [Go 1.25 command lifecycle](https://github.com/golang/go/blob/go1.25.0/src/os/exec/exec.go),
+[Linux non-reaping wait](https://man7.org/linux/man-pages/man2/waitpid.2.html)
+and [Linux process-group signaling](https://man7.org/linux/man-pages/man2/kill.2.html).
+
+Process-stop observations distinguish task absence (`ENOENT` or `ESRCH`) from
+permission, I/O, interruption or cancellation errors. Other read errors are
+retried only within the original 300-ms observation window and never count as
+stopped-process proof. A positive same-group `Z`/`X` state or kernel-task absence
+is still required. Eight error-classification cases run inside the existing
+start-failure control; no new test profile, service lifetime or deadline is added.
+The first group-cleanup workflow remains failed: its race caller-cancellation
+observation did not record an errno, so its exact cause remains NOT_ESTABLISHED.
+A corrected successful observation does not reclassify that historical run.
+
+The combined Node retains its newer early compiler-version checks, typed remote
+failures, redirect refusal, unread failure-body rule, list-read counters and
+large-success profile. Its actual RemoteRunner deadline case also requires one
+same-group compiler child stop before the original independent later compile.
+The original thirteen terminal events and eleven joined service lifetimes stay
+required. The two original service deadline children and this original-client
+child make three separately observed stops; no new profile, service or build is
+added. Standalone compiler source qualification does not transfer execution to
+this integration: all original Node native, full-client, SQL, financial, wallet
+phase and passive HTTP-connection oracles require fresh exact-source CI.

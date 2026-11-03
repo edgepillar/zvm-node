@@ -93,11 +93,12 @@ func TestCompilerRemoteClientContainerProfile(t *testing.T) {
 		case <-time.After(2 * time.Second):
 			t.Fatal("actual deadline client did not join")
 		}
+		compilerProfileGroupStopped(t, f.marker)
 		if out, err := client.Compile(context.Background(), f.second, input); err != nil || !bytes.Contains(out, []byte(`"contracts"`)) || f.binaryReads.Load() != 1 {
 			t.Fatal("deadline retained the slot, changed release work or canceled independent later work", err)
 		}
 		p.stop(t)
-		compilerRemoteRecord(t, "actual_remote_busy_deadline_and_reuse", map[string]any{"typed_busy": true, "typed_deadline": true, "original_client_joined": true, "independent_later_compile_succeeded": true, "new_binary_downloads": 1, "cache_file_budget": 3, "owned_start_marker_files": 1})
+		compilerRemoteRecord(t, "actual_remote_busy_deadline_and_reuse", map[string]any{"actual_same_group_compiler_children_stopped": 1, "original_stop_observation_bound_ms": 300, "escaped_or_adopted_descendants_qualified": false, "typed_busy": true, "typed_deadline": true, "original_client_joined": true, "independent_later_compile_succeeded": true, "new_binary_downloads": 1, "cache_file_budget": 3, "owned_start_marker_files": 1})
 	})
 	t.Run("client_success_output_budget", func(t *testing.T) {
 		f := newCompilerProfileFixture(t, "large-success")

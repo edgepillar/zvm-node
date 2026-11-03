@@ -132,6 +132,8 @@ jobs:
           go-version-file: go.mod
       - name: Check bounded protocol navigation controls without SDK or network
         run: node scripts/market-navigation-support.test.mjs
+      - name: Bind delayed approval purpose to its exact owned request without completing Network requests
+        run: node scripts/market-quote-request-purpose.test.mjs
       - name: Reuse only complete observed pre-navigation quiet without relaxing post-navigation waits
         run: node scripts/ci-market-quiet-reuse.mjs
       - name: Require earlier-load completion before navigation under the same deadline

@@ -72,13 +72,31 @@ async function snapshotBody(response, count) {
   return validateSnapshot(JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(raw)),count)
 }
 
-export function createOwnedRPCCorrelation(origin, {nonceFactory = () => randomBytes(16).toString('hex')} = {}) {
+export function createOwnedRPCCorrelation(origin, {nonceFactory = () => randomBytes(16).toString('hex'), requestPurpose = null} = {}) {
   const base = loopback(origin)
   if (typeof nonceFactory !== 'function') throw new Error('invalid owned nonce factory')
   const records = new Map(), requestTags = new WeakMap(), entryEcho = new WeakMap(), selections = new WeakMap()
   const defaultScope = {}, scopeStates = new WeakMap(), retainedScopes = []
   let tagged = 0, fallbacks = 0, readErrors = 0, truncated = false, primaryEchoes = 0
   const limitHits = {records:0,primaryScopes:0,primaryBindings:0,earlyHeaderEchoes:0}
+  let purposeReadErrors = 0
+  const unavailablePurpose = reason => ({status:'UNAVAILABLE',phase:null,reason})
+  const purposeSnapshot = request => {
+    if (requestPurpose === null) return unavailablePurpose('OBSERVER_NOT_CONFIGURED')
+    try {
+      if (typeof requestPurpose !== 'function') throw new Error('purpose observer unavailable')
+      const value = requestPurpose(request)
+      if (!exact(value,['status','phase'])) throw new Error('purpose observation shape')
+      const status = value.status, phase = value.phase
+      if (!['MARKED','NOT_MARKED','AMBIGUOUS','UNAVAILABLE'].includes(status) ||
+          (status === 'MARKED' ? !['ACCOUNT_CHANGE_REFUSAL','FORM_EDIT_SNAPSHOT'].includes(phase) : phase !== null))
+        throw new Error('purpose observation value')
+      return Object.freeze({status,phase,reason:status === 'UNAVAILABLE' ? 'OBSERVER_UNAVAILABLE' : null})
+    } catch {
+      purposeReadErrors = Math.min(Number.MAX_SAFE_INTEGER,purposeReadErrors+1)
+      return unavailablePurpose('OBSERVER_REFUSED')
+    }
+  }
   const limit = kind => {truncated=true;limitHits[kind]=Math.min(Number.MAX_SAFE_INTEGER,limitHits[kind]+1)}
   const scopeState = session => {
     const key = session === undefined ? defaultScope : session
@@ -135,6 +153,24 @@ export function createOwnedRPCCorrelation(origin, {nonceFactory = () => randomBy
     const result = Object.freeze({selectionScope,targets:structuredClone(publicTargets),targetsTruncated:pending.length > ownedRPCLimits.query})
     selections.set(result,{requests,publicTargets,selectionScope,truncated:result.targetsTruncated})
     return result
+  }
+  function requestPurposes(selection) {
+    const facts = {scope:'owned-delayed-approval-request-purpose',phase:'AFTER_ORIGINAL_CHECKS_BEFORE_OWNED_BROWSER_CLOSE',
+      observation:'EXACT_REQUEST_OBJECT_BEFORE_FIRST_OWNED_CONTINUE',rawIdentifiersOrHeadersOrBodyValuesReported:false,
+      additionalProtocolCommands:0,additionalHTTPRequests:0,completionGateChanged:false,responseDeliveryEstablished:false,
+      protocolSessionIdentityEstablished:false,serverRequestCorrelationEstablished:false,qualifiesNavigation:false,
+      maximumQuery:ownedRPCLimits.query,observerReadErrors:purposeReadErrors}
+    const selected=selections.get(selection)
+    if (!selected) return {...facts,status:'UNAVAILABLE',reason:'SELECTION',selectionScope:'UNAVAILABLE',targetsTruncated:false,targets:[]}
+    const byTarget=new Map(selected.requests.map(row=>[row.targetIndex,row]))
+    return {...facts,status:'AVAILABLE',reason:null,selectionScope:selected.selectionScope,targetsTruncated:selected.truncated,
+      targets:selected.publicTargets.map(target=>{
+        const chosen=byTarget.get(target.index),record=chosen && records.get(chosen.nonce)
+        const matched=!!record && !target.ambiguousSelection
+        return {index:target.index,requestObjectTagStatus:target.ambiguousSelection ? 'AMBIGUOUS' : matched ? 'MATCHED' : 'UNAVAILABLE',
+          sameUniqueOwnedHeaderRecordAsSelectedTarget:matched,
+          purpose:matched ? {...record.purpose} : unavailablePurpose('NO_UNIQUE_OWNED_HEADER_RECORD')}
+      })}
   }
   async function read(fixture,selection,{fetchImpl = globalThis.fetch,timeoutMilliseconds = ownedRPCLimits.timeout} = {}) {
     const selected = selections.get(selection)
@@ -207,7 +243,7 @@ export function createOwnedRPCCorrelation(origin, {nonceFactory = () => randomBy
               fields.reduce((size,[name,value]) => size+name.length+value.length,0) > 65536) throw new Error('bounded original headers required')
             const nonce = record?.nonce ?? nonceFactory()
             if (!nonceValid(nonce) || (!record && records.has(nonce))) throw new Error('unique owned nonce required')
-            if (!record) {record={nonce,echoed:false};records.set(nonce,record);requestTags.set(request,record);tagged++}
+            if (!record) {record={nonce,echoed:false,purpose:purposeSnapshot(request)};records.set(nonce,record);requestTags.set(request,record);tagged++}
             options = {headers:Object.fromEntries([...fields,[ownedRPCHeader,nonce]])}
           }
         }
@@ -242,6 +278,7 @@ export function createOwnedRPCCorrelation(origin, {nonceFactory = () => randomBy
       else bindEcho(entry,nonce)
     },
     diagnostic:descriptor,
+    requestPurposes,
     select,
     read,
     readConnections,

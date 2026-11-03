@@ -1,3 +1,4 @@
+import {createQuoteRequestPurposeObserver} from './market-quote-request-purpose.mjs'
 import {createOwnedRPCCorrelation} from './market-rpc-correlation-support.mjs'
 import {observeOwnedRequestAction} from './market-request-action-support.mjs'
 // Actual production listing controls, real EIP-712 signatures from a public
@@ -25,7 +26,8 @@ for await (const chunk of process.stdin) {
   assert.ok(rawInput.length <= 16384, 'bounded fixture input required')
 }
 const fixture = JSON.parse(rawInput), base = new URL(fixture.base)
-const rpcCorrelation = createOwnedRPCCorrelation(base.origin)
+const quotePurpose = createQuoteRequestPurposeObserver()
+const rpcCorrelation = createOwnedRPCCorrelation(base.origin, {requestPurpose:quotePurpose.describe})
 const navigation = boundedNavigation(base.origin, {rpcCorrelation})
 assert.equal(base.protocol, 'http:')
 assert.equal(base.hostname, '127.0.0.1')
@@ -469,6 +471,7 @@ async function preparePage(page) {
             entry.params?.[0]?.to?.toLowerCase() === fixture.collection.toLowerCase() &&
             entry.params?.[0]?.data?.toLowerCase() === quoteApprovalData)) {
             assert.ok(!heldQuoteRequest); quoteArmed = false; heldQuoteRequest = request; quoteHeldRequests++
+            quotePurpose.mark(request, quoteHeldRequests === 1 ? 'ACCOUNT_CHANGE_REFUSAL' : quoteHeldRequests === 2 ? 'FORM_EDIT_SNAPSHOT' : null)
             resolveQuoteReady(); return
           }
         }
@@ -908,6 +911,7 @@ try {
   const rpcSelection=navigation.ownedRPCSelection()
   await rpcCorrelation.report(fixture,rpcSelection)
   await rpcCorrelation.reportConnections(fixture,rpcSelection)
+  try {console.log('OWNED-MARKET-QUOTE-PURPOSE '+JSON.stringify({...rpcCorrelation.requestPurposes(rpcSelection),fixture:quotePurpose.summary()}))} catch {}
   releaseApprovalBuyer()
   quoteArmed = false
   if (heldQuoteRequest) {const request = heldQuoteRequest; heldQuoteRequest = null; await observeOwnedRequestAction(request, 'CONTINUE', () => rpcCorrelation.continue(request)).catch(() => {})}

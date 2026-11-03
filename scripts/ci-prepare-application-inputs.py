@@ -96,7 +96,7 @@ def validate_manifest(manifest):
         if set(row)!={'id','name','version','url','bytes','sha256','integrity'}:raise Refused('manifest-package-schema')
         if not re.fullmatch('[0-9a-f]{64}',row['sha256']) or type(row['bytes']) is not int or not 0<row['bytes']<=MAX_ARCHIVE:raise Refused('manifest-package-pin')
         name=row['name'];version=row['version']
-        if not re.fullmatch('@(?:openzeppelin|uniswap)/[A-Za-z0-9-]+',name) or not re.fullmatch('[0-9.]+(?:-beta\.[0-9]+)?',version):raise Refused('manifest-package-identity')
+        if not re.fullmatch('@(?:openzeppelin|uniswap)/[A-Za-z0-9-]+',name) or not re.fullmatch(r'[0-9.]+(?:-beta\.[0-9]+)?',version):raise Refused('manifest-package-identity')
         expected='https://registry.npmjs.org/'+name+'/-/'+name.rsplit('/',1)[1]+'-'+version+'.tgz'
         if row['url']!=expected:raise Refused('manifest-package-URL')
     if not isinstance(groups,list) or tuple(row.get('name') for row in groups)!=GROUPS:raise Refused('manifest-complete-group-inventory')
@@ -162,10 +162,12 @@ def main(args):
     value={'schema':1,'manifest_sha256':sha(raw_manifest),'groups':bundles(manifest,packages,lambda name:regular(root,name))}
     encoded=canonical(value)
     if len(encoded)>MAX_BUNDLE:raise Refused('source-bundle-budget')
-    path=destination/'compiler-applications.json';fd=os.open(path,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o400)
-    with os.fdopen(fd,'wb') as handle:handle.write(encoded)
+    path=destination/'compiler-applications.json';fd=os.open(path,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o444)
+    with os.fdopen(fd,'wb') as handle:
+        handle.write(encoded)
+        os.fchmod(handle.fileno(),0o444)
     print('N01_APPLICATION_INPUTS '+json.dumps({'manifest_sha256':sha(raw_manifest),'bundle_sha256':sha(encoded),'bundle_bytes':len(encoded),
-        'complete_groups':list(GROUPS),'target_records':118,'tracked_export_records':82,'compiler_executions_on_host':0,
+        'runtime_bundle_mode':stat.S_IMODE(path.stat().st_mode),'complete_groups':list(GROUPS),'target_records':118,'tracked_export_records':82,'compiler_executions_on_host':0,
         'package_installations':0,'archive_files_extracted_to_disk':0,'literal_source_files_copied_to_a_tree':0},sort_keys=True),flush=True)
 if __name__=='__main__':
     try:main(sys.argv)

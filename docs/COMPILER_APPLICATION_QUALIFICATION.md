@@ -63,3 +63,9 @@ Independent compiler authority, broader platforms, default-scale operator and
 cache ownership, per-invocation containment and parent crashes, accepted release
 and genesis bindings, real wallets, independent NoM finality and production
 acceptance remain open.
+
+The CI producer finalizes the public literal input bundle as mode 0444 through
+its owned file descriptor, so the declared runtime UID can read it without write
+permission. The job-owned parent directory remains private and the raw archive
+files remain host-only. This source correction does not change or qualify the
+original browser navigation deadline or its transport failure cause.

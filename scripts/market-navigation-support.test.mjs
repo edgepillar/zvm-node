@@ -122,7 +122,8 @@ let controls = 0
 {
   const {session, tracker} = fixture(); session.signal('Network.requestWillBeSent', request('cached', '/asset.js', 'Script'))
   session.signal('Network.requestServedFromCache', {requestId: 'cached'}); assert.equal(tracker.diagnostic().activeRequests, 1)
-  session.signal('Network.responseReceived', terminal('cached')); await tracker.wait(performance.now()+500)
+  session.signal('Network.responseReceived', terminal('cached')); assert.equal(tracker.diagnostic().activeRequests, 1)
+  session.signal('Network.loadingFinished', terminal('cached')); await tracker.wait(performance.now()+500)
   assert.equal(tracker.diagnostic().completed, 1); assert.equal(tracker.diagnostic().cacheSignals, 1); controls++
 }
 {

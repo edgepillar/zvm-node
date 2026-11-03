@@ -158,7 +158,7 @@ export function createNavigationRequestTracker(session, page, rpcCorrelation) {
         peak = Math.max(peak, active.size)
       }
       changed = performance.now(); notify()
-    } else if (type === 'Network.responseReceived' || type === 'Network.loadingFinished' || type === 'Network.loadingFailed') finish(event)
+    } else if (type === 'Network.loadingFinished' || type === 'Network.loadingFailed') finish(event)
     else if (type === 'Network.requestServedFromCache') {
       // Cache provenance alone is not a response or a terminal loading event.
       if (identity(event) !== null) cacheSignals++

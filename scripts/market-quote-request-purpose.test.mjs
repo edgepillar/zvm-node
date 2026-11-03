@@ -168,3 +168,5 @@ console.log('QUOTE-PURPOSE-CONTROLS ' + JSON.stringify({node: process.version, c
   observerSourceSHA256: digest('./market-quote-request-purpose.mjs'), correlationSourceSHA256: digest('./market-rpc-correlation-support.mjs'),
   navigationSourceSHA256: digest('./market-navigation-support.mjs'), SDKBrowserSocketOrHTTPExecutions: 0,
   originalContinueArgumentsAndOutcomePreserved: true, originalNetworkCompletionGatePreserved: true, rawPrivateValuesReported: false}))
+
+await import('./market-rpc-request-context.test.mjs')

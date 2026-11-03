@@ -1,5 +1,4 @@
-import {createQuoteRequestPurposeObserver} from './market-quote-request-purpose.mjs'
-import {createOwnedRPCCorrelation} from './market-rpc-correlation-support.mjs'
+import {createOwnedRequestDiagnostics} from './market-owned-request-diagnostics.mjs'
 import {observeOwnedRequestAction} from './market-request-action-support.mjs'
 // Actual production listing controls, real EIP-712 signatures from a public
 // test signer and the real Go node/market/RPC fixture. No market or RPC reply
@@ -26,8 +25,7 @@ for await (const chunk of process.stdin) {
   assert.ok(rawInput.length <= 16384, 'bounded fixture input required')
 }
 const fixture = JSON.parse(rawInput), base = new URL(fixture.base)
-const quotePurpose = createQuoteRequestPurposeObserver()
-const rpcCorrelation = createOwnedRPCCorrelation(base.origin, {requestPurpose:quotePurpose.describe})
+const {rpcCorrelation,quotePurpose} = createOwnedRequestDiagnostics(base.origin,fixture,()=>({encodeFunctionData,parseAbi}))
 const navigation = boundedNavigation(base.origin, {rpcCorrelation})
 assert.equal(base.protocol, 'http:')
 assert.equal(base.hostname, '127.0.0.1')
@@ -912,6 +910,7 @@ try {
   await rpcCorrelation.report(fixture,rpcSelection)
   await rpcCorrelation.reportConnections(fixture,rpcSelection)
   try {console.log('OWNED-MARKET-QUOTE-PURPOSE '+JSON.stringify({...rpcCorrelation.requestPurposes(rpcSelection),fixture:quotePurpose.summary()}))} catch {}
+  try {console.log('OWNED-MARKET-RPC-CONTEXT '+JSON.stringify(rpcCorrelation.requestContexts(rpcSelection)))} catch {}
   releaseApprovalBuyer()
   quoteArmed = false
   if (heldQuoteRequest) {const request = heldQuoteRequest; heldQuoteRequest = null; await observeOwnedRequestAction(request, 'CONTINUE', () => rpcCorrelation.continue(request)).catch(() => {})}

@@ -1,3 +1,5 @@
+import {captureRPCRequestContext,observeRPCRequestContext,bindRPCRequestContext,describeRPCRequestContext,
+  summarizeRPCRequestContext,unavailableRPCRequestContext} from './market-rpc-request-context.mjs'
 // Owned-fixture HTTP correlation only. Nonces and existing header values never
 // enter diagnostics. A matching echo/handler record does not prove delivery.
 import {randomBytes} from 'node:crypto'
@@ -72,7 +74,7 @@ async function snapshotBody(response, count) {
   return validateSnapshot(JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(raw)),count)
 }
 
-export function createOwnedRPCCorrelation(origin, {nonceFactory = () => randomBytes(16).toString('hex'), requestPurpose = null} = {}) {
+export function createOwnedRPCCorrelation(origin, {nonceFactory = () => randomBytes(16).toString('hex'), requestPurpose = null, requestContext = null} = {}) {
   const base = loopback(origin)
   if (typeof nonceFactory !== 'function') throw new Error('invalid owned nonce factory')
   const records = new Map(), requestTags = new WeakMap(), entryEcho = new WeakMap(), selections = new WeakMap()
@@ -151,7 +153,7 @@ export function createOwnedRPCCorrelation(origin, {nonceFactory = () => randomBy
       ...(!nonce && entry ? {observation:descriptor(entry)} : {})}))
     const requests = targets.flatMap(({nonce},targetIndex) => nonce && counts.get(nonce) === 1 && records.has(nonce) ? [{nonce,targetIndex}] : [])
     const result = Object.freeze({selectionScope,targets:structuredClone(publicTargets),targetsTruncated:pending.length > ownedRPCLimits.query})
-    selections.set(result,{requests,publicTargets,selectionScope,truncated:result.targetsTruncated})
+    selections.set(result,{requests,publicTargets,selectionScope,truncated:result.targetsTruncated,contextEntries:targets.map(row=>row.entry)})
     return result
   }
   function requestPurposes(selection) {
@@ -170,6 +172,22 @@ export function createOwnedRPCCorrelation(origin, {nonceFactory = () => randomBy
         return {index:target.index,requestObjectTagStatus:target.ambiguousSelection ? 'AMBIGUOUS' : matched ? 'MATCHED' : 'UNAVAILABLE',
           sameUniqueOwnedHeaderRecordAsSelectedTarget:matched,
           purpose:matched ? {...record.purpose} : unavailablePurpose('NO_UNIQUE_OWNED_HEADER_RECORD')}
+      })}
+  }
+  function requestContexts(selection) {
+    const facts={scope:'owned-loopback-rpc-request-context',phase:'AFTER_ORIGINAL_CHECKS_BEFORE_OWNED_BROWSER_CLOSE',
+      rawIdentifiersAddressesHeadersOrBodyValuesReported:false,additionalProtocolCommands:0,additionalHTTPRequests:0,
+      completionGateChanged:false,qualifiesNavigation:false,responseDeliveryEstablished:false,protocolSessionIdentityEstablished:false,
+      rendererDocumentCommitEstablished:false,maximumQuery:ownedRPCLimits.query,observer:summarizeRPCRequestContext(requestContext)}
+    const chosen=selections.get(selection)
+    if (!chosen) return {...facts,status:'UNAVAILABLE',reason:'SELECTION',selectionScope:'UNAVAILABLE',targetsTruncated:false,targets:[]}
+    const byTarget=new Map(chosen.requests.map(row=>[row.targetIndex,row]))
+    return {...facts,status:'AVAILABLE',reason:null,selectionScope:chosen.selectionScope,targetsTruncated:chosen.truncated,
+      targets:chosen.publicTargets.map(target=>{
+        const selected=byTarget.get(target.index),record=selected && records.get(selected.nonce),matched=!!record&&!target.ambiguousSelection
+        return {index:target.index,requestObjectTagStatus:target.ambiguousSelection?'AMBIGUOUS':matched?'MATCHED':'UNAVAILABLE',
+          sameUniqueOwnedHeaderRecordAsSelectedTarget:matched,
+          context:matched?describeRPCRequestContext(requestContext,record.contextReference,chosen.contextEntries[target.index]):unavailableRPCRequestContext()}
       })}
   }
   async function read(fixture,selection,{fetchImpl = globalThis.fetch,timeoutMilliseconds = ownedRPCLimits.timeout} = {}) {
@@ -243,7 +261,7 @@ export function createOwnedRPCCorrelation(origin, {nonceFactory = () => randomBy
               fields.reduce((size,[name,value]) => size+name.length+value.length,0) > 65536) throw new Error('bounded original headers required')
             const nonce = record?.nonce ?? nonceFactory()
             if (!nonceValid(nonce) || (!record && records.has(nonce))) throw new Error('unique owned nonce required')
-            if (!record) {record={nonce,echoed:false,purpose:purposeSnapshot(request)};records.set(nonce,record);requestTags.set(request,record);tagged++}
+            if (!record) {record={nonce,echoed:false,purpose:purposeSnapshot(request),contextReference:captureRPCRequestContext(requestContext,request)};records.set(nonce,record);requestTags.set(request,record);tagged++}
             options = {headers:Object.fromEntries([...fields,[ownedRPCHeader,nonce]])}
           }
         }
@@ -253,6 +271,7 @@ export function createOwnedRPCCorrelation(origin, {nonceFactory = () => randomBy
       return options ? request.continue(options) : request.continue()
     },
     observeSignal(type,event,entry,session) {
+      try {observeRPCRequestContext(requestContext,type,event,session)} catch {}
       try {
         if (type !== 'Network.responseReceivedExtraInfo') return
         const nonce = echoHeader(event?.headers)
@@ -271,6 +290,7 @@ export function createOwnedRPCCorrelation(origin, {nonceFactory = () => randomBy
       } catch {readErrors++}
     },
     bind(id,entry,session) {
+      try {bindRPCRequestContext(requestContext,id,entry,session)} catch {}
       const state=scopeState(session)
       if (!state || !register(state,id,entry) || !state.early.has(id)) return
       const nonce=state.early.get(id);state.early.delete(id)
@@ -279,6 +299,7 @@ export function createOwnedRPCCorrelation(origin, {nonceFactory = () => randomBy
     },
     diagnostic:descriptor,
     requestPurposes,
+    requestContexts,
     select,
     read,
     readConnections,

@@ -101,6 +101,7 @@ func TestBoundEmptyStoragePayload(t *testing.T) {
 		{"negative-base-fee", func(p *engine.ExecutableData) { p.BaseFeePerGas = big.NewInt(-1) }},
 		{"oversized-base-fee", func(p *engine.ExecutableData) { p.BaseFeePerGas = new(big.Int).Lsh(big.NewInt(1), 256) }},
 		{"missing-blob-gas-header-field", func(p *engine.ExecutableData) { p.BlobGasUsed = nil }},
+		{"missing-excess-blob-gas-header-field", func(p *engine.ExecutableData) { p.ExcessBlobGas = nil }},
 	}
 	for _, change := range changes {
 		t.Run(change.name, func(t *testing.T) {

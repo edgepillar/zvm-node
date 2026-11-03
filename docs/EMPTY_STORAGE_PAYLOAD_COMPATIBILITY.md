@@ -33,3 +33,5 @@ Primary contracts:
 
 - [Pinned encoder and complete block-hash conversion](https://github.com/ethereum-optimism/op-geth/blob/e8800cffe53d459cde8a07c8e8f1de9d86e79e07/beacon/engine/types.go)
 - [Isthmus header and Engine API rules](https://specs.optimism.io/protocol/isthmus/exec-engine.html)
+
+The omitted-root path also requires both V4 blob gas header fields to be present. RLP can encode a missing optional integer like an explicit zero when later fields are present, so the block hash alone cannot prove field presence. The Engine API still validates the submitted payload and execution result. Both missing-field cases have separate required unit and race controls.

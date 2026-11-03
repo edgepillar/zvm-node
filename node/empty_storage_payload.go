@@ -27,6 +27,9 @@ func payloadWithBoundEmptyWithdrawalsRoot(payload *engine.ExecutableData, beacon
 	if !chain.HasOptimismWithdrawalsRoot(payload.Timestamp) {
 		return payload, nil
 	}
+	if payload.BlobGasUsed == nil || payload.ExcessBlobGas == nil {
+		return nil, errors.New("engine omitted required blob gas header fields")
+	}
 	copy := *payload
 	root := types.EmptyWithdrawalsHash
 	copy.WithdrawalsRoot = &root

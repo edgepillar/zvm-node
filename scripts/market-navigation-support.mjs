@@ -261,6 +261,7 @@ export function boundedNavigation(origin, {rpcCorrelation = null} = {}) {
       try {
         const tracker = await withinDeadline(observeNavigationRequests(page, rpcCorrelation), deadline)
         trackers.add(tracker)
+        await tracker.wait(deadline, quietMilliseconds)
         const before = tracker.diagnostic().documentRequestsStarted
         const remaining = deadline-performance.now()
         assert.ok(remaining > 0, 'original navigation deadline elapsed')

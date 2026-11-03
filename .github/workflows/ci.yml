@@ -132,6 +132,8 @@ jobs:
           go-version-file: go.mod
       - name: Check bounded protocol navigation controls without SDK or network
         run: node scripts/market-navigation-support.test.mjs
+      - name: Require earlier-load completion before navigation under the same deadline
+        run: node scripts/ci-market-navigation-transition.mjs
       - name: Require the exact header-only failure and terminal-load regression without SDK or network
         run: node scripts/ci-market-terminal-load.mjs
       - name: Check bounded owned RPC progress diagnostics without SDK or network

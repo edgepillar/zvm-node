@@ -15,6 +15,7 @@ jobs:
     outputs:
       run_go: ${{ steps.select.outputs.run_go }}
       run_integration: ${{ steps.select.outputs.run_integration }}
+      selection: ${{ steps.select.outputs.selection }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -22,6 +23,8 @@ jobs:
           fetch-depth: 2
       - name: Check conservative source-selection controls without network
         run: python3 -B scripts/check-ci-change-scope_test.py
+      - name: Check named gate and parallel job graph controls without network
+        run: python3 -B scripts/ci-market-result-gate_test.py
       - name: Read the exact optional runtime anchor with bounded history
         continue-on-error: true
         run: git fetch --no-tags --depth=1 origin 86a254841276ede899b22379a9cdea4f9632465a
@@ -82,9 +85,9 @@ jobs:
           python3 scripts/prepare-simulated-backend-fixture.py verify "$RUNNER_TEMP/zvm-simulator-fixture"
           git diff --exit-code
 
-  market-browser:
-    needs: [ci-scope, go, full-client-recovery]
-    if: ${{ always() && needs.ci-scope.outputs.run_integration != 'false' && needs.go.result == 'success' && needs['full-client-recovery'].result == 'success' }}
+  market-browser-execution:
+    needs: [ci-scope]
+    if: ${{ always() && needs.ci-scope.outputs.run_integration != 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -266,3 +269,17 @@ jobs:
         env:
           N01_GO_IMAGE: docker.io/library/golang@sha256:ebd54034f076819b3054f155db53660ded951612bb4dfd277f933e62059e5d5a
         run: sh scripts/ci-compiler-isolation.sh
+
+  market-browser:
+    needs: [ci-scope, go, full-client-recovery, compiler-isolation, market-browser-execution]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Require every selected job to succeed under the original named check
+        env:
+          ZVM_CI_NEEDS: ${{ toJSON(needs) }}
+        run: python3 -B scripts/ci-market-result-gate.py

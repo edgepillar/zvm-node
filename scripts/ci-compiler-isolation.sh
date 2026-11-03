@@ -120,3 +120,31 @@ printf 'N01_VENDOR_RUNTIME_END\n'
 test "$(sha256sum "$RUNNER_TEMP/n01-host-canaries/engine-token")" = "$n01_secret_before"
 test "$(sha256sum "$RUNNER_TEMP/n01-host-canaries/node-state")" = "$n01_state_before"
 printf 'N01_VENDOR_HOST_CANARIES_PRESERVED=true\n'
+
+# Compile every saved application/benchmark artifact through the same production
+# service and RemoteRunner, using the three already downloaded vendor inputs.
+python3 -B scripts/ci-prepare-application-inputs_test.py
+python3 -B scripts/ci-prepare-application-inputs.py "$RUNNER_TEMP/n01-compiler-application-inputs"
+printf 'N01_APPLICATION_RUNTIME_BEGIN\n'
+docker run --rm --read-only --user 10001:10001 --network none \
+  --cap-drop ALL --security-opt no-new-privileges \
+  --memory 512m --memory-swap 512m --cpus 2 --pids-limit 64 \
+  --tmpfs /tmp:rw,nosuid,nodev,exec,size=64m,mode=1777 \
+  --mount "type=bind,src=$RUNNER_TEMP/n01-compiler-output/zvm-node,dst=/qualified/zvm-node,readonly" \
+  --mount "type=bind,src=$RUNNER_TEMP/n01-compiler-output/solcd.test,dst=/qualified/solcd.test,readonly" \
+  --mount "type=bind,src=$RUNNER_TEMP/n01-compiler-output/test2json,dst=/qualified/test2json,readonly" \
+  --mount "type=bind,src=$RUNNER_TEMP/n01-compiler-vendors/solc-0.5.16,dst=/qualified/vendor-0.5.16,readonly" \
+  --mount "type=bind,src=$RUNNER_TEMP/n01-compiler-vendors/solc-0.6.6,dst=/qualified/vendor-0.6.6,readonly" \
+  --mount "type=bind,src=$RUNNER_TEMP/n01-compiler-vendors/solc-0.8.30,dst=/qualified/vendor-0.8.30,readonly" \
+  --mount "type=bind,src=$RUNNER_TEMP/n01-compiler-application-inputs/compiler-applications.json,dst=/qualified/compiler-applications.json,readonly" \
+  --env GOMAXPROCS=2 --env GOMEMLIMIT=128MiB --env TMPDIR=/tmp \
+  --env ZVM_N01_APPLICATION_PROFILE=1 --env ZVM_N01_SOLCD_BINARY=/qualified/zvm-node \
+  --env "ZVM_N01_HOST_SECRET_PATH=$RUNNER_TEMP/n01-host-canaries/engine-token" \
+  --env "ZVM_N01_HOST_STATE_PATH=$RUNNER_TEMP/n01-host-canaries/node-state" \
+  "$N01_GO_IMAGE" /qualified/test2json -t -p github.com/Zenoglyphs-VM/zvm-node/cmd/zvm-node \
+  /qualified/solcd.test -test.v=test2json -test.count=1 -test.failfast -test.timeout=5m -test.run '^TestCompilerApplicationContainerProfile$'
+printf 'N01_APPLICATION_RUNTIME_END\n'
+test "$(sha256sum "$RUNNER_TEMP/n01-host-canaries/engine-token")" = "$n01_secret_before"
+test "$(sha256sum "$RUNNER_TEMP/n01-host-canaries/node-state")" = "$n01_state_before"
+printf 'N01_APPLICATION_HOST_CANARIES_PRESERVED=true\n'
+git diff --exit-code

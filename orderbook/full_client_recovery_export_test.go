@@ -316,6 +316,11 @@ func OwnedFullClientCLIArgs(t *testing.T, directory string, args []string, phase
 
 func ownedFullClientCLIArgs(t *testing.T, directory string, args []string, phase string, kernelKill bool) ([]string, func()) {
 	t.Helper()
+	return ownedFullClientCLIArgsProfile(t, directory, args, phase, kernelKill, true)
+}
+
+func ownedFullClientCLIArgsProfile(t *testing.T, directory string, args []string, phase string, kernelKill, seedMessagePasser bool) ([]string, func()) {
+	t.Helper()
 	path := filepath.Join(directory, "full-client-genesis.json")
 	info, err := os.Lstat(path)
 	if err != nil || !info.Mode().IsRegular() || info.Size() > 1<<20 {
@@ -346,8 +351,15 @@ func ownedFullClientCLIArgs(t *testing.T, directory string, args []string, phase
 	if err != nil || config.L2GenesisHash != genesis.ToBlock().Hash() {
 		t.Fatal("owned full-client genesis differs from its loaded configuration")
 	}
-	if genesis.Alloc[params.OptimismL2ToL1MessagePasser].Storage[common.HexToHash("0x01")] != common.HexToHash("0x01") {
-		t.Fatal("owned process case requires the declared synthetic MessagePasser slot")
+	if seedMessagePasser {
+		if genesis.Alloc[params.OptimismL2ToL1MessagePasser].Storage[common.HexToHash("0x01")] != common.HexToHash("0x01") {
+			t.Fatal("owned process case requires the declared synthetic MessagePasser slot")
+		}
+	} else {
+		account := genesis.Alloc[params.OptimismL2ToL1MessagePasser]
+		if len(account.Code) == 0 || len(account.Storage) != 0 {
+			t.Fatal("owned empty process requires the original code and empty storage")
+		}
 	}
 	r := &executionRun{t: t, path: directory, scenario: &executionScenario{genesis: &genesis, cfg: config}}
 	f := &FullClientRecoveryCLIFixture{RecoveryCLIFixture: &RecoveryCLIFixture{r: r}}
@@ -359,6 +371,9 @@ func ownedFullClientCLIArgs(t *testing.T, directory string, args []string, phase
 		}
 	})
 	f.openExecutionClient()
+	if !seedMessagePasser {
+		writeOwnedEmptyFullClientContext(t, f)
+	}
 	started = true
 	fmt.Println("owned_full_client_started " + fullClientDefaultsProfile)
 	args = append([]string(nil), args...)

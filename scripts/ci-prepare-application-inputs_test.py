@@ -35,9 +35,19 @@ class SourceTests(unittest.TestCase):
     def test_complete_actual_manifest_and_budgets(self):
         self.assertIs(inputs.validate_manifest(manifest),manifest)
         self.assertEqual([row['name'] for row in manifest['groups']],list(inputs.GROUPS))
-        self.assertEqual(sum(len(row['targets']) for row in manifest['groups']),118)
+        self.assertEqual(sum(len(row['targets']) for row in manifest['groups']),122)
         self.assertEqual(sum(len(row['exports']) for row in manifest['groups']),82)
         self.assertEqual(len(manifest['artifact_files']),6)
+
+    def test_duplicate_or_replaced_complete_target_is_refused(self):
+        for replacement in [deepcopy(manifest['groups'][0]['targets'][1]),{'name':'apps/Unexpected.sol:Unexpected'}]:
+            changed=deepcopy(manifest);changed['groups'][0]['targets'][0]=replacement
+            with self.assertRaises(inputs.Refused):inputs.validate_manifest(changed)
+
+    def test_saved_export_material_cannot_be_rebound(self):
+        for key,value in [('name','apps/Missing.sol:Missing'),('abiSha256','0'*64),('creationSha256','0'*64)]:
+            changed=deepcopy(manifest);changed['groups'][0]['exports'][0][key]=value
+            with self.assertRaises(inputs.Refused):inputs.validate_manifest(changed)
 
     def test_regular_ustar_and_literal_package_identity(self):
         raw=packed();files=inputs.archive_files(raw,pin(raw))
@@ -113,8 +123,8 @@ class SourceTests(unittest.TestCase):
         with self.assertRaises(inputs.Refused):inputs.bundles(manifest,{name:{} for name in inputs.PACKAGE_IDS},lambda name:b'changed')
 
 if __name__=='__main__':
-    suite=unittest.defaultTestLoader.loadTestsFromTestCase(SourceTests);assert suite.countTestCases()==14
+    suite=unittest.defaultTestLoader.loadTestsFromTestCase(SourceTests);assert suite.countTestCases()==16
     result=unittest.TextTestRunner(verbosity=2,stream=sys.stdout).run(suite)
     if not result.wasSuccessful() or result.skipped:raise SystemExit(1)
-    print('N01_APPLICATION_INPUT_CONTROLS '+json.dumps({'functions':14,'failures':0,'errors':0,'skips':0,
+    print('N01_APPLICATION_INPUT_CONTROLS '+json.dumps({'functions':16,'failures':0,'errors':0,'skips':0,
         'memory_only':True,'network_requests':0,'native_compiler_executions':0,'archives_extracted_to_disk':0},sort_keys=True))

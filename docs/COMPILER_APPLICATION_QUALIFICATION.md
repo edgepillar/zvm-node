@@ -18,7 +18,7 @@ Five groups use the original source and compiler recipes:
 | Uniswap core | 0.5.16 | 12 | 12 | 2 |
 | Uniswap periphery | 0.6.6 | 27 | 27 | 1 |
 
-All 118 target identities must be present, with no missing or extra target.
+All 122 target identities must be present, with no missing or extra target.
 The 82 tracked export records retain exact ABI and creation-byte comparisons.
 All 81 provided runtime templates must match completely, including metadata.
 The original WZNN export omits its runtime template; this profile does not invent
@@ -69,3 +69,15 @@ its owned file descriptor, so the declared runtime UID can read it without write
 permission. The job-owned parent directory remains private and the raw archive
 files remain host-only. This source correction does not change or qualify the
 original browser navigation deadline or its transport failure cause.
+
+The application group has 48 compiler targets and 44 saved exports. Four local
+interfaces are intentionally absent from the saved export file; they remain
+required compiler targets. Their ABI, empty executable material, layout, metadata
+and reference maps are pinned by the original application build lock. The same
+literal source hashes and compiler settings are checked before importing that
+historical material. All 82 saved exports and 81 provided runtime templates retain
+their original comparisons; the original WZNN export still supplies no runtime.
+All 83 modern targets additionally require their locked layout, metadata and
+immutable/link-reference maps. The original 39 legacy full-material records,
+63 final Go loader bindings, runtime limits and six CI gates remain required.
+Neither failed source workflow is retried or reclassified by this correction.

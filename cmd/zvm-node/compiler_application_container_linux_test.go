@@ -146,7 +146,7 @@ func compilerApplicationOutput(t *testing.T, raw []byte, group compilerApplicati
 		}
 	}
 	if len(observed) != len(group.Targets) {
-		t.Fatal("actual compiled target inventory differs from the complete manifest")
+		t.Fatalf("actual compiled target inventory differs from the complete manifest: group=%s actual=%d expected=%d", group.Name, len(observed), len(group.Targets))
 	}
 	for _, expected := range group.Targets {
 		artifact, ok := observed[expected.Name]
@@ -170,9 +170,37 @@ func compilerApplicationOutput(t *testing.T, raw []byte, group compilerApplicati
 			len(metadata.Settings.Target) != 1 || metadata.Settings.Target[expected.Name[:at]] != expected.Name[at+1:] {
 			t.Fatal("actual target compiler metadata or compilation target differs")
 		}
-		if expected.EVM != "" && (compilerApplicationCanonicalHash(t, artifact.EVM) != expected.EVM ||
-			compilerApplicationCanonicalHash(t, artifact.Layout) != expected.StorageLayout || compilerApplicationHash([]byte(artifact.Metadata)) != expected.Metadata) {
-			t.Fatal("complete legacy EVM, source map, reference map, layout or metadata differs from its published lock")
+		if expected.EVM != "" && compilerApplicationCanonicalHash(t, artifact.EVM) != expected.EVM {
+			t.Fatal("complete legacy EVM, source map or reference map differs from its published lock", expected.Name)
+		}
+		if expected.StorageLayout != "" && compilerApplicationCanonicalHash(t, artifact.Layout) != expected.StorageLayout ||
+			expected.Metadata != "" && compilerApplicationHash([]byte(artifact.Metadata)) != expected.Metadata {
+			t.Fatal("complete target layout or metadata differs from its original lock", expected.Name)
+		}
+		if len(expected.ImmutableReferences) > 0 || len(expected.LinkReferences) > 0 {
+			var references struct {
+				Creation struct {
+					Links json.RawMessage `json:"linkReferences"`
+				} `json:"bytecode"`
+				Runtime struct {
+					Links      json.RawMessage `json:"linkReferences"`
+					Immutables json.RawMessage `json:"immutableReferences"`
+				} `json:"deployedBytecode"`
+			}
+			if json.Unmarshal(artifact.EVM, &references) != nil {
+				t.Fatal("complete target reference material is invalid", expected.Name)
+			}
+			empty := func(raw json.RawMessage) json.RawMessage {
+				if len(raw) == 0 {
+					return json.RawMessage(`{}`)
+				}
+				return raw
+			}
+			links, err := json.Marshal(map[string]json.RawMessage{"creation": empty(references.Creation.Links), "runtime": empty(references.Runtime.Links)})
+			if err != nil || len(expected.LinkReferences) > 0 && compilerApplicationCanonicalHash(t, links) != compilerApplicationCanonicalHash(t, expected.LinkReferences) ||
+				len(expected.ImmutableReferences) > 0 && compilerApplicationCanonicalHash(t, empty(references.Runtime.Immutables)) != compilerApplicationCanonicalHash(t, expected.ImmutableReferences) {
+				t.Fatal("complete target immutable or link references differ from their original lock", expected.Name)
+			}
 		}
 	}
 	return observed
@@ -324,7 +352,7 @@ func TestCompilerApplicationContainerProfile(t *testing.T) {
 			}
 		}
 	}
-	if targets != 118 || exports != 82 || runtimes != 81 {
+	if targets != 122 || exports != 82 || runtimes != 81 {
 		t.Fatal("the complete original output inventory was not qualified")
 	}
 	// Reproduce the production loader's deliberate name overwrites. Every

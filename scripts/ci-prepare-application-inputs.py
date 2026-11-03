@@ -100,8 +100,19 @@ def validate_manifest(manifest):
         expected='https://registry.npmjs.org/'+name+'/-/'+name.rsplit('/',1)[1]+'-'+version+'.tgz'
         if row['url']!=expected:raise Refused('manifest-package-URL')
     if not isinstance(groups,list) or tuple(row.get('name') for row in groups)!=GROUPS:raise Refused('manifest-complete-group-inventory')
-    if sum(len(row['targets']) for row in groups)!=118 or sum(len(row['exports']) for row in groups)!=82:raise Refused('manifest-complete-target-inventory')
+    if sum(len(row['targets']) for row in groups)!=122 or sum(len(row['exports']) for row in groups)!=82:raise Refused('manifest-complete-target-inventory')
+    expected_counts={'apps':48,'bench':34,'wznn':1,'core':12,'periphery':27}
     for group in groups:
+        target_names=[row['name'] for row in group['targets']]
+        export_names=[row['name'] for row in group['exports']]
+        if len(target_names)!=expected_counts[group['name']] or len(set(target_names))!=len(target_names):raise Refused('manifest-exact-target-inventory')
+        if len(set(export_names))!=len(export_names) or not set(export_names)<=set(target_names):raise Refused('manifest-export-target-binding')
+        if group['name']=='apps':
+            extra={'apps/ZVMFarmFeeStrategy.sol:'+name for name in ('IUniswapV2Factory','IUniswapV2Pair','IUniswapV2Router','IZVMFarm')}
+            if set(target_names)-set(export_names)!=extra:raise Refused('manifest-non-exported-interface-inventory')
+        targets={row['name']:row for row in group['targets']}
+        for exported in group['exports']:
+            if any(targets[exported['name']].get(key)!=value for key,value in exported.items() if key!='artifact_path'):raise Refused('manifest-export-material-binding')
         if len(group['sources'])>128 or len(group['targets'])>128 or not 0<group['input_bytes']<=16<<20:raise Refused('manifest-group-budget')
         if len({row['unit'] for row in group['sources']})!=len(group['sources']):raise Refused('manifest-source-duplicates')
         for row in group['sources']:
@@ -167,7 +178,7 @@ def main(args):
         handle.write(encoded)
         os.fchmod(handle.fileno(),0o444)
     print('N01_APPLICATION_INPUTS '+json.dumps({'manifest_sha256':sha(raw_manifest),'bundle_sha256':sha(encoded),'bundle_bytes':len(encoded),
-        'runtime_bundle_mode':stat.S_IMODE(path.stat().st_mode),'complete_groups':list(GROUPS),'target_records':118,'tracked_export_records':82,'compiler_executions_on_host':0,
+        'runtime_bundle_mode':stat.S_IMODE(path.stat().st_mode),'complete_groups':list(GROUPS),'target_records':122,'tracked_export_records':82,'compiler_executions_on_host':0,
         'package_installations':0,'archive_files_extracted_to_disk':0,'literal_source_files_copied_to_a_tree':0},sort_keys=True),flush=True)
 if __name__=='__main__':
     try:main(sys.argv)

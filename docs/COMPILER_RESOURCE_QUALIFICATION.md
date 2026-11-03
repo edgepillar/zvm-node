@@ -93,3 +93,13 @@ The source still requires fresh exact-head CI; this guide is not execution proof
 References: [Go 1.25 command lifecycle](https://github.com/golang/go/blob/go1.25.0/src/os/exec/exec.go),
 [Linux non-reaping wait](https://man7.org/linux/man-pages/man2/waitpid.2.html)
 and [Linux process-group signaling](https://man7.org/linux/man-pages/man2/kill.2.html).
+
+Process-stop observations distinguish task absence (`ENOENT` or `ESRCH`) from
+permission, I/O, interruption or cancellation errors. Other read errors are
+retried only within the original 300-ms observation window and never count as
+stopped-process proof. A positive same-group `Z`/`X` state or kernel-task absence
+is still required. Eight error-classification cases run inside the existing
+start-failure control; no new test profile, service lifetime or deadline is added.
+The first group-cleanup workflow remains failed: its race caller-cancellation
+observation did not record an errno, so its exact cause remains NOT_ESTABLISHED.
+A corrected successful observation does not reclassify that historical run.

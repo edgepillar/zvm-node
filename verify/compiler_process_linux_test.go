@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -73,15 +74,23 @@ func compilerGroupMarker(t *testing.T, path string) (parent, child int) {
 	return 0, 0
 }
 
+func compilerGroupProcGone(err error) bool {
+	return errors.Is(err, os.ErrNotExist) || errors.Is(err, syscall.ESRCH)
+}
+
 func compilerGroupChildStopped(t *testing.T, parent, child int) {
 	t.Helper()
 	deadline := time.Now().Add(300 * time.Millisecond)
 	for time.Now().Before(deadline) {
 		raw, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", child))
-		if errors.Is(err, os.ErrNotExist) {
+		if compilerGroupProcGone(err) {
 			return
 		}
-		if err != nil || len(raw) > 4096 {
+		if err != nil {
+			time.Sleep(time.Millisecond)
+			continue
+		}
+		if len(raw) > 4096 {
 			t.Fatal("owned compiler child state could not be established")
 		}
 		state, group, err := compilerGroupStat(raw)
@@ -93,7 +102,7 @@ func compilerGroupChildStopped(t *testing.T, parent, child int) {
 		}
 		time.Sleep(time.Millisecond)
 	}
-	t.Fatal("same-group compiler child remained live after its request completed")
+	t.Fatal("same-group compiler child stop was not established within the original observation bound")
 }
 
 func TestCompilerProcessGroupCleanup(t *testing.T) {
@@ -212,13 +221,26 @@ func TestCompilerConcurrentGroupsDoNotCrossCancel(t *testing.T) {
 func TestCompilerProcessGroupStartFailure(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	cmd := newCompilerCommand(ctx, "/owned-nonexistent-compiler")
+	missing := filepath.Join(t.TempDir(), "missing-owned-compiler")
+	cmd := newCompilerCommand(ctx, missing)
 	if err := runCompilerCommand(ctx, cmd); !errors.Is(err, context.Canceled) || cmd.Process != nil {
 		t.Fatal("cancelled compile launched a child")
 	}
-	cmd = newCompilerCommand(context.Background(), "/owned-nonexistent-compiler")
+	cmd = newCompilerCommand(context.Background(), missing)
 	if err := runCompilerCommand(context.Background(), cmd); !errors.Is(err, os.ErrNotExist) || cmd.Process != nil {
 		t.Fatal("failed compiler launch acquired a process group")
 	}
 	t.Log("OWNED-COMPILER-GROUP-START cancelledAndFailedLaunchesHaveNoProcess=true")
+	for _, err := range []error{os.ErrNotExist, syscall.ESRCH, &os.PathError{Op: "read", Path: "owned-proc", Err: syscall.ESRCH}} {
+		if !compilerGroupProcGone(err) {
+			t.Fatal("kernel task disappearance was not recognized")
+		}
+	}
+	for _, err := range []error{nil, os.ErrPermission, syscall.EIO, syscall.EINTR, context.Canceled} {
+		if compilerGroupProcGone(err) {
+			t.Fatal("unestablished read or cancellation was treated as a stopped child")
+		}
+	}
+	t.Log("OWNED-COMPILER-GROUP-PROC-CONTROLS cases=8 disappearanceOnly=true permissionIOInterruptedAndCancellationRefused=true")
+
 }

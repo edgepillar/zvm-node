@@ -351,10 +351,14 @@ func compilerProfileGroupStopped(t *testing.T, marker string) {
 	deadline := time.Now().Add(300 * time.Millisecond)
 	for time.Now().Before(deadline) {
 		current, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", child))
-		if errors.Is(err, os.ErrNotExist) {
+		if errors.Is(err, os.ErrNotExist) || errors.Is(err, syscall.ESRCH) {
 			return
 		}
-		if err != nil || len(current) > 4096 {
+		if err != nil {
+			time.Sleep(time.Millisecond)
+			continue
+		}
+		if len(current) > 4096 {
 			t.Fatal("actual compiler child stop could not be established")
 		}
 		state, group = stateGroup(current)
@@ -366,7 +370,7 @@ func compilerProfileGroupStopped(t *testing.T, marker string) {
 		}
 		time.Sleep(time.Millisecond)
 	}
-	t.Fatal("actual solcd returned while its same-group compiler child remained live")
+	t.Fatal("actual solcd same-group child stop was not established within the original observation bound")
 }
 
 func TestCompilerServiceContainerProfile(t *testing.T) {

@@ -51,7 +51,7 @@ docker run --rm --read-only --user "$n01_build_uid:$n01_build_gid" \
     printf "N01_BUILD_STAGE=source_identity\n"
     test "$(git rev-parse HEAD)" = "$N01_EXPECTED_SOURCE"
     test -z "$(git status --porcelain)"
-    test "$(git -C zvm-core rev-parse HEAD)" = 75b0bb2bb4a798519226217bb566badb9f71ac6d
+    test "$(git -C zvm-core rev-parse HEAD)" = acf39556a3f465a6885f23fc3d0cc8065891d76c
     printf "N01_BUILD_STAGE=JSON_converter\n"
     go build -mod=readonly -o /out/test2json cmd/test2json
     test -x /out/test2json

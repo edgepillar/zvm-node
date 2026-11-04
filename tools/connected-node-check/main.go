@@ -46,7 +46,13 @@ func fmtNumber(name string, number uint64) string {
 func output(label string, value any) {
 	raw, err := json.Marshal(value)
 	must(err)
-	fmt.Printf("CONNECTED-NODE-%s %s\n", label, raw)
+	prefix := "CONNECTED-NODE"
+	if record, ok := value.(map[string]any); ok {
+		if profile, ok := record["profile"].(string); ok && strings.HasPrefix(profile, selectedPrefix) {
+			prefix = "CONSTRUCTOR-NODE"
+		}
+	}
+	fmt.Printf("%s-%s %s\n", prefix, label, raw)
 }
 
 var depositor = common.HexToAddress("0x00000000000000000000000000000000000a11ce")
@@ -143,20 +149,25 @@ func waitIndex(ctx context.Context, n *nodeProcess, dir string, p *derive.Plan, 
 }
 
 func exercise(ctx context.Context, name, root string) {
-	path := name
-	if name == "supported-isthmus" {
+	selected := strings.HasPrefix(name, selectedPrefix)
+	sourceName := strings.TrimPrefix(name, selectedPrefix)
+	path := sourceName
+	if sourceName == "supported-isthmus" {
 		path = "l2"
 	}
 	raw, err := os.ReadFile("chains/" + path + "/rollup.json")
 	must(err)
 	cfg, err := rollup.Parse(raw)
 	must(err)
-	if name == "supported-isthmus" {
+	if sourceName == "supported-isthmus" {
 		cfg.EVM = "isthmus"
+	}
+	if selected {
+		cfg.PredeployState = rollup.PredeployStateConstructorsV1
 	}
 	g, err := l2.BuildGenesis(cfg, cfg.L2GenesisTimestamp)
 	must(err)
-	if name == "supported-isthmus" {
+	if sourceName == "supported-isthmus" || selected {
 		cfg.L2GenesisHash = g.ToBlock().Hash()
 	}
 	check(g.ToBlock().Hash() == cfg.L2GenesisHash && len(g.Alloc) == 12, "source genesis differs")
@@ -180,6 +191,9 @@ func exercise(ctx context.Context, name, root string) {
 	must(err)
 	defer e.Close()
 	checkGenesis(ctx, c, g)
+	if selected {
+		constructorCheckpoint(ctx, c, cfg, model, name, "genesis", head, 0)
+	}
 	unauthenticatedRefused(ctx)
 	nom := startNoM(ctx, cfg, name)
 	defer nom.stop()
@@ -245,17 +259,36 @@ func exercise(ctx context.Context, name, root string) {
 			waitNode(ctx, node, nom, dir, p, number)
 			waitIndex(ctx, node, dir, p, number, head, block.ParentHash())
 			checkAPI(ctx, node, p.Momentum.Height)
+			if selected {
+				constructorCheckpoint(ctx, c, cfg, model, name, "persisted-restart", head, number)
+			}
 			output("RESTART", map[string]any{"profile": name, "number": number, "blockHash": head, "stateRoot": predicted, "completeStateAccounts": 14, "NodeAndClientRestarted": true, "readOnlySQLAndIndexMatched": true})
 		}
 	}
 	check(len(roots) == 8 && txs == 16, "incomplete production Node cohort")
+	if selected {
+		constructorCheckpoint(ctx, c, cfg, model, name, "final", head, 8)
+	}
 	node.stop()
 	client.stop()
-	output("PROFILE", map[string]any{"profile": name, "rules": cfg.EVM, "chainId": cfg.L2ChainID, "sourceRollupSha256": digest(raw), "genesisHash": cfg.L2GenesisHash,
+	record := map[string]any{"profile": name, "rules": cfg.EVM, "chainId": cfg.L2ChainID, "sourceRollupSha256": digest(raw), "genesisHash": cfg.L2GenesisHash,
 		"connectedBlocks": 8, "exactPlannedTransactions": 16, "completeStateRoots": roots, "blockHashes": hashes, "completeStateAccountChecks": 126,
 		"receiptChecks": 16, "readOnlyNodeRecords": 8, "indexedBlocks": 8, "indexedTransactions": 16, "persistedNodeAndClientRestarts": 1,
 		"invalidPayloadRefusals": 8, "unauthenticatedEngineRefusals": 1, "productionNodeCLIStartsAndJoins": 2, "nodeCancellationExit": 1,
-		"actualProductionNodeAndCompleteClientExecuted": true, "indexEnabled": true, "outboundPricesAndCompilerDisabled": true, "NoMCanonicalityOrReleaseAcceptance": false})
+		"actualProductionNodeAndCompleteClientExecuted": true, "indexEnabled": true, "outboundPricesAndCompilerDisabled": true, "NoMCanonicalityOrReleaseAcceptance": false}
+	if selected {
+		selectedRaw, err := json.Marshal(cfg)
+		must(err)
+		record["genesisStateRoot"] = g.ToBlock().Root()
+		record["predeployState"] = cfg.PredeployState
+		record["selectedRollupSha256"] = digest(selectedRaw)
+		record["constructorCheckpoints"] = 3
+		record["anchoredConstructorAccountChecks"] = 12
+		record["constructorStatusSlotReads"] = 3
+		record["constructorGetterChecks"] = 9
+		record["explicitCanonicalBlockHashAnchors"] = true
+	}
+	output("PROFILE", record)
 }
 func main() {
 	check(len(os.Args) == 3 && len(os.Args[2]) == 40, "one fresh directory and exact Node source required")
@@ -275,4 +308,8 @@ func main() {
 		exercise(ctx, name, root)
 	}
 	fmt.Println("CONNECTED-NODE-COMPLETE profiles=4 connectedBlocks=32 exactPlannedTransactions=64 completeStateRoots=32 indexedBlocks=32 persistedNodeAndClientRestarts=4 invalidPayloadRefusals=32 productionAccepted=false")
+	for _, name := range []string{"supported-isthmus", "l2", "l2-69", "l2-dp"} {
+		exercise(ctx, selectedPrefix+name, root)
+	}
+	fmt.Println("CONSTRUCTOR-NODE-COMPLETE profiles=4 connectedBlocks=32 exactPlannedTransactions=64 completeStateRoots=32 indexedBlocks=32 persistedNodeAndClientRestarts=4 invalidPayloadRefusals=32 checkpoints=12 anchoredConstructorAccounts=48 statusSlotReads=12 getters=36 productionAccepted=false")
 }

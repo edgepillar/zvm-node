@@ -7,7 +7,7 @@ V3, payload import stays V4, and a refused request does not trigger a version
 downgrade. Unknown profiles are refused while loading configuration.
 
 This integration currently pins Core
-`75b0bb2bb4a798519226217bb566badb9f71ac6d` from the public `edgepillar/zvm-core`
+`acf39556a3f465a6885f23fc3d0cc8065891d76c` from the public `edgepillar/zvm-core`
 fork, pending the separate upstream Core review. The integration depends on
 [Core PR #7](https://github.com/Zenoglyphs-VM/zvm-core/pull/7). The compiler
 isolation lane checks this same exact Node dependency. The separately pinned
@@ -25,5 +25,12 @@ The unchanged complete Node workflow remains required: normal and selected
 race tests, original simulator red/green control, compiler isolation and vendor
 artifacts, full-client recovery and every signed marketplace profile. The Core
 four-profile complete-client cohort remains separate exact-source evidence.
-Production Karst Node/client execution, NoM finality, broad economic/default
-scale behavior and maintainer/operator/release acceptance remain separate gates.
+Bounded default and selected constructor-state Node/client controls are
+described separately. NoM finality, broad signed-user/economic/default-scale
+behavior and maintainer/operator/release acceptance remain separate gates.
+
+The previous Core 75b0bb2bb4a798519226217bb566badb9f71ac6d and Node c706b048d16d1d9c9b7cb324d379ad16dde34f26
+qualifications remain historical at their exact pins. Adoption of the new Core
+and constructor-state genesis requires this source's own complete seven-job CI;
+older results are not transferred to this revision. No shipped chain file or
+operator database is migrated by this contribution.

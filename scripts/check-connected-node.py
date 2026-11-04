@@ -37,7 +37,7 @@ root=pathlib.Path(os.environ['RUNNER_TEMP'])/'connected-node-qualification';root
 assert shutil.disk_usage(root).free>=12<<30
 head=os.environ['GITHUB_SHA'];assert len(head)==40 and set(head)<=set('0123456789abcdef')
 assert bounded(['git','rev-parse','HEAD']).decode().strip()==head
-assert bounded(['git','-C','zvm-core','rev-parse','HEAD']).decode().strip()=='75b0bb2bb4a798519226217bb566badb9f71ac6d'
+assert bounded(['git','-C','zvm-core','rev-parse','HEAD']).decode().strip()=='acf39556a3f465a6885f23fc3d0cc8065891d76c'
 bounded(['git','diff','--exit-code']);bounded(['git','-C','zvm-core','diff','--exit-code'])
 bounded(['docker','pull','--platform','linux/amd64',IMAGE],timeout=120)
 details=json.loads(bounded(['docker','image','inspect',IMAGE]));assert len(details)==1;details=details[0]
@@ -68,13 +68,15 @@ def read():
             captured.extend(chunk);sys.stdout.buffer.write(chunk);sys.stdout.buffer.flush()
     except BaseException as error:failures.append(str(error))
 reader=threading.Thread(target=read,daemon=True);reader.start();deadline=time.monotonic()+420
+maximum_sampled_allocated=0;minimum_sampled_free=shutil.disk_usage(root).free
 data_identity=(data.lstat().st_dev,data.lstat().st_ino);unstable_since=None;unstable_samples=0
 def scan_error(error):raise error
 try:
     while process.poll() is None:
         assert not failures,failures
         assert time.monotonic()<deadline,'production Node/client wall deadline'
-        assert shutil.disk_usage(root).free>=10<<30,'hosted free-space floor'
+        observed_free=shutil.disk_usage(root).free;minimum_sampled_free=min(minimum_sampled_free,observed_free)
+        assert observed_free>=10<<30,'hosted free-space floor'
         info=data.lstat();assert stat.S_ISDIR(info.st_mode) and (info.st_dev,info.st_ino)==data_identity,'generated-data root identity changed'
         allocated=0
         try:
@@ -90,12 +92,18 @@ try:
         else:
             unstable_since=None
             assert allocated<=512<<20,'generated Node/client allocation limit'
+            maximum_sampled_allocated=max(maximum_sampled_allocated,allocated)
         time.sleep(.5)
     reader.join(timeout=5);assert not reader.is_alive() and not failures
     assert process.returncode==0,('actual production Node/client exit',process.returncode)
     assert bytes(captured).decode().count(COMPLETE)==1,'incomplete production Node/client cohort'
+    assert bytes(captured).decode().count('CONSTRUCTOR-NODE-COMPLETE profiles=4 connectedBlocks=32 exactPlannedTransactions=64 completeStateRoots=32 indexedBlocks=32 persistedNodeAndClientRestarts=4 invalidPayloadRefusals=32 checkpoints=12 anchoredConstructorAccounts=48 statusSlotReads=12 getters=36 productionAccepted=false')==1,'incomplete constructor-state production Node cohort'
     print('CONNECTED-NODE-TRANSPORT '+json.dumps({'actualExit':process.returncode,'complete':True,'bytes':len(captured),
         'sha256':hashlib.sha256(captured).hexdigest(),'network':'none','positiveCohortExecutions':1,'incompleteDataSamplesNotUsedForSizeClaims':unstable_samples},sort_keys=True),flush=True)
+    print('CONSTRUCTOR-NODE-RESOURCE '+json.dumps({'profileCohorts':2,'profiles':8,'maximumSampledGeneratedDataAllocatedBytes':maximum_sampled_allocated,
+        'generatedDataAllocationCapBytes':512<<20,'minimumSampledFreeBytes':minimum_sampled_free,'minimumFreeBytes':10<<30,
+        'sampleIntervalMilliseconds':500,'OSAggregateDiskQuotaClaimed':False,'containerPositiveExecutions':1,'driverBuilds':1,
+        'productionNodeBuildsInThisJob':1,'incompleteDataSamplesNotUsedForSizeClaims':unstable_samples,'historicalOrLocalDataDeleted':False},sort_keys=True),flush=True)
 finally:
     if process.poll() is None:
         subprocess.run(['docker','kill',name],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=20);process.wait(timeout=20)

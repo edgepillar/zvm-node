@@ -7,13 +7,13 @@ program receives declared synthetic NoM RPC inputs; it does not contact a real
 NoM node, authenticate a chain or operate a funded wallet.
 
 The immutable Core dependency is
-`75b0bb2bb4a798519226217bb566badb9f71ac6d`. Its connected-client helpers provide
+`acf39556a3f465a6885f23fc3d0cc8065891d76c`. Its connected-client helpers provide
 the unchanged independent non-EVM state model, OP process lifecycle, genesis,
 account, receipt and sandbox predicates. This new driver does not construct or
 import the positive blocks: only the production Node does that. The observer
 reads the Node database with `mode=ro` and `query_only(1)` and makes no repairs.
 
-The four required profiles are a declared supported Isthmus variant and the
+The original four required default profiles are a supported Isthmus variant and the
 three shipped Karst profiles (`l2`, `l2-69`, `l2-dp`). Each must derive eight
 connected blocks containing the exact source-planned L1 information and
 synthetic ZNN mint deposits. Every block must match the independent complete
@@ -45,3 +45,30 @@ Passing this cohort cannot qualify a failed marketplace job or establish its
 historical cause. Full signed-user/economic/default-scale/concurrent/fault
 coverage, real NoM/finality, other platforms, release/genesis authority and
 maintainer/operator/governance/custody acceptance remain separate gates.
+
+
+The same driver, production Node executable and single container also run four
+explicit `source-constructors-v1` genesis profiles. The production Node remains
+the only positive payload builder/importer. Another 32 connected blocks, 64
+exact planned transactions, 32 complete roots, 32 read-only Node records,
+32 indexed blocks and 64 indexed transactions must agree, including four joint
+Node/client restarts and eight additional joined production CLI lifetimes.
+The original models, NoM fixture, lifecycle, SQL observer, image, limits and
+all seven workflow jobs remain required.
+
+The constructor checkpoint source is copied byte-for-byte from the qualified
+Core revision. Its genesis hash/root pairs must match that same Core recipe.
+At genesis, the persisted height-four joint restart and height eight, explicit
+canonical block hashes bind 48 account observations, twelve EntryPoint status
+reads and 36 domain/deposit/nonce getters. Eight requests at deterministic
+unknown canonical hashes must return errors while the accepted head stays
+unchanged. Sampled combined data/free-space records retain the unchanged
+512 MiB cap, 10 GiB floor and scan-instability handling. They do not assert an
+OS-enforced aggregate quota or a transient peak bound. No historical/local
+data, real chain configuration or operator database is deleted or migrated.
+
+These bounded synthetic NoM/mint profiles do not establish independent NoM
+authority, signed user-operation or full economic/wallet flows, accepted epoch
+or release signatures, other platforms, governance/custody acceptance or a
+production release. Every original acceptance requirement remains open to its
+own authoritative evidence.

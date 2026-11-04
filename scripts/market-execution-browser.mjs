@@ -9,6 +9,7 @@ import {reportOwnedRPCProgress} from './market-rpc-progress-support.mjs'
 import {boundedNavigation} from './market-navigation-support.mjs'
 import {connectFixtureWallet} from './market-wallet-connection-support.mjs'
 import {checkAccountMenuBalance} from './market-account-menu-balance.mjs'
+import {createHeartbeatContextProbe, checkHeartbeatContext} from './market-heartbeat-context-probe.mjs'
 import {createAccountMenuContextProbe, checkAccountMenuContext} from './market-account-menu-context.mjs'
 import {createTokenPaymentChecks} from './market-token-payment-support.mjs'
 import {createSaleProceedsChecks} from './market-sale-proceeds-support.mjs'
@@ -75,6 +76,8 @@ assert.equal(actorSigner.address.toLowerCase(), fixture.actor.toLowerCase())
 const targetAddress = fixture.action === 'approval' ? fixture.collection : fixture.exchange
 const quoteProfile = !tokenProfile && fixture.app === 'karum' && fixture.kind === 'single' && fixture.action === 'buy'
 const accountMenuContext = createAccountMenuContextProbe({origin: base.origin, enabled: quoteProfile,
+  continueRequest: request => observeOwnedRequestAction(request, 'CONTINUE', () => rpcCorrelation.continue(request))})
+const heartbeatContext = createHeartbeatContextProbe({origin: base.origin, enabled: quoteProfile,
   continueRequest: request => observeOwnedRequestAction(request, 'CONTINUE', () => rpcCorrelation.continue(request))})
 const quoteApprovalData = encodeFunctionData({abi: parseAbi(['function isApprovedForAll(address owner, address operator) view returns (bool)']),
   functionName: 'isApprovedForAll', args: [fixture.seller, fixture.exchange]}).toLowerCase()
@@ -465,6 +468,7 @@ async function preparePage(page) {
     const target = new URL(request.url())
     if (target.protocol === 'data:' || target.origin === base.origin) {
       if (accountMenuContext.intercept(request, page)) return
+      if (heartbeatContext.intercept(request, page)) return
       if (quoteArmed && request.method() === 'POST' && target.pathname === '/rpc') {
         const raw = request.postData()
         if (typeof raw === 'string' && raw.length <= 256 * 1024) {
@@ -618,6 +622,9 @@ try {
   assert.equal(state.actor.toLowerCase(), fixture.actor.toLowerCase())
   record('real HTTP admission binds actual inputs without changing the derived prefix')
   if (quoteProfile) await checkAccountMenuContext({page, chain, owner: fixture.seller, buyer: fixture.buyer, source: pins['zvm-karum'], probe: accountMenuContext})
+  if (quoteProfile) await checkHeartbeatContext({page, chain, source: pins['zvm-karum'], origin: base.origin, probe: heartbeatContext,
+    effectCounts: () => ({orderPOSTs: posts.length, providerAccountRequests: methods.filter(method => method === 'eth_requestAccounts').length,
+      providerTransactions: transactions.length, typedDataSignatures: signatures.length})})
   await projection('admitted', -1)
   if (fixture.action === 'buy') {
   await navigate('/item/' + fixture.collection + '/1', true)
@@ -921,6 +928,7 @@ try {
   releaseApprovalBuyer()
   quoteArmed = false
   if (heldQuoteRequest) {const request = heldQuoteRequest; heldQuoteRequest = null; await observeOwnedRequestAction(request, 'CONTINUE', () => rpcCorrelation.continue(request)).catch(() => {})}
+  await heartbeatContext.dispose().catch(() => {})
   if (context) await context.close()
   await stop()
   await rm(profile, {recursive: true, force: false})

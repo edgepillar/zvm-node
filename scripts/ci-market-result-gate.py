@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 import re
 
-RUNTIME = ('go', 'full-client-recovery', 'compiler-isolation', 'market-browser-execution')
+RUNTIME = ('go', 'full-client-recovery', 'compiler-isolation', 'market-browser-execution', 'connected-node')
 NEEDS = ('ci-scope',) + RUNTIME
 SELECTIONS = {
     'FULL_REQUIRED': ('true', 'true'),
@@ -60,7 +60,7 @@ def decide(needs):
     if outputs['run_go'] == 'true':
         selected.update(('go', 'compiler-isolation'))
     if outputs['run_integration'] == 'true':
-        selected.update(('full-client-recovery', 'market-browser-execution'))
+        selected.update(('full-client-recovery', 'market-browser-execution', 'connected-node'))
     for name in RUNTIME:
         expected = 'success' if name in selected else 'skipped'
         if needs[name]['result'] != expected or needs[name]['outputs']:
@@ -88,7 +88,7 @@ def check_workflow(raw):
     raw = raw.split('jobs:\n', 1)[1]
     headers = list(re.finditer(r'^  ([a-z][a-z0-9-]*):\n', raw, re.M))
     if [match.group(1) for match in headers] != [
-            'ci-scope', 'go', 'market-browser-execution', 'full-client-recovery', 'compiler-isolation', 'market-browser']:
+            'ci-scope', 'go', 'market-browser-execution', 'full-client-recovery', 'compiler-isolation', 'connected-node', 'market-browser']:
         raise Refused('workflow_job_identity_or_order')
     jobs = {match.group(1): raw[match.end():headers[index+1].start() if index+1 < len(headers) else len(raw)]
             for index, match in enumerate(headers)}
@@ -99,7 +99,7 @@ def check_workflow(raw):
             if block.count('      selection: ${{ steps.select.outputs.selection }}\n') != 1:
                 raise Refused('workflow_selection_output_missing')
             continue
-        expected_needs = '[ci-scope, go, full-client-recovery, compiler-isolation, market-browser-execution]' if name == 'market-browser' else '[ci-scope]'
+        expected_needs = '[ci-scope, go, full-client-recovery, compiler-isolation, market-browser-execution, connected-node]' if name == 'market-browser' else '[ci-scope]'
         if re.findall(r'^    needs: (.+)$', block, re.M) != [expected_needs]:
             raise Refused('workflow_dependency_graph_changed')
         if name == 'market-browser':

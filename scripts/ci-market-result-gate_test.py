@@ -12,6 +12,7 @@ spec = importlib.util.spec_from_file_location('market_gate', path)
 gate = importlib.util.module_from_spec(spec); spec.loader.exec_module(gate)
 WORKFLOW = Path('.github/workflows/ci.yml').read_text(encoding='utf-8')
 MATRIX_CASES = 0
+LEGACY_CASES = 0
 
 
 def dependencies(selection='FULL_REQUIRED'):
@@ -33,11 +34,11 @@ class GateTests(unittest.TestCase):
                 self.assertFalse(result['skipped_runtime_is_new_qualification'])
 
     def test_all_runtime_result_combinations_for_each_selection(self):
-        global MATRIX_CASES
+        global MATRIX_CASES, LEGACY_CASES
         states = ('success', 'failure', 'cancelled', 'skipped', 'neutral', 'timed_out', '')
         for selection in gate.SELECTIONS:
             expected = dependencies(selection)
-            for results in product(states, repeat=4):
+            for results in product(states, repeat=5):
                 value = deepcopy(expected)
                 for name, result in zip(gate.RUNTIME, results):
                     value[name]['result'] = result
@@ -46,6 +47,8 @@ class GateTests(unittest.TestCase):
                 else:
                     with self.assertRaises(gate.Refused): gate.decide(value)
                 MATRIX_CASES += 1
+                if value['connected-node']['result'] == expected['connected-node']['result']:
+                    LEGACY_CASES += 1
 
     def test_selection_failure_cannot_be_hidden_by_other_success(self):
         for state in ('failure', 'cancelled', 'skipped', 'neutral', 'timed_out', '', None):
@@ -101,8 +104,8 @@ class GateTests(unittest.TestCase):
 
     def test_changed_dependencies_conditions_names_or_bound_input_are_refused(self):
         mutations = [
-            ('[ci-scope, go, full-client-recovery, compiler-isolation, market-browser-execution]', '[ci-scope, go, full-client-recovery, market-browser-execution]'),
-            ('[ci-scope, go, full-client-recovery, compiler-isolation, market-browser-execution]', '[ci-scope]'),
+            ('[ci-scope, go, full-client-recovery, compiler-isolation, market-browser-execution, connected-node]', '[ci-scope, go, full-client-recovery, market-browser-execution]'),
+            ('[ci-scope, go, full-client-recovery, compiler-isolation, market-browser-execution, connected-node]', '[ci-scope]'),
             ('  market-browser-execution:\n    needs: [ci-scope]', '  market-browser-execution:\n    needs: [ci-scope, go]'),
             ('    if: ${{ always() }}', '    if: ${{ success() }}'),
             ('      selection: ${{ steps.select.outputs.selection }}\n', ''),
@@ -128,6 +131,6 @@ if __name__ == '__main__':
     result = unittest.TextTestRunner(verbosity=2, stream=sys.stdout).run(suite)
     if not result.wasSuccessful() or result.skipped:
         raise SystemExit(1)
-    assert MATRIX_CASES == 7203
-    print('CI-MARKET-GATE-CONTROLS '+json.dumps({'functions': 9, 'result_combinations': MATRIX_CASES,
+    assert MATRIX_CASES == 50421 and LEGACY_CASES == 7203
+    print('CI-MARKET-GATE-CONTROLS '+json.dumps({'functions': 9, 'result_combinations': MATRIX_CASES, 'preserved_original_result_combinations': LEGACY_CASES,
         'failures': 0, 'errors': 0, 'skips': 0, 'network_requests': 0, 'native_builds_or_tests': 0}, sort_keys=True))

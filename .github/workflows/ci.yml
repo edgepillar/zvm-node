@@ -308,8 +308,42 @@ jobs:
           N01_GO_IMAGE: docker.io/library/golang@sha256:ebd54034f076819b3054f155db53660ded951612bb4dfd277f933e62059e5d5a
         run: sh scripts/ci-compiler-isolation.sh
 
+  connected-node:
+    needs: [ci-scope]
+    if: ${{ always() && needs.ci-scope.outputs.run_integration != 'false' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GOMAXPROCS: '2'
+      GOMEMLIMIT: 4GiB
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          submodules: true
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Prepare this job's fresh disposable compiler cache
+        env:
+          GOCACHE: ${{ runner.temp }}/zvm-owned-go-cache-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          python3 -B scripts/ci-connected-node-cache.py prepare
+          printf '%s\n' "GOCACHE=$GOCACHE" >> "$GITHUB_ENV"
+      - name: Build production Node and independent checker once within the sampled disk budget
+        run: python3 -B scripts/ci-connected-node-build.py
+      - name: Release only the completed job-owned compiler cache
+        run: python3 -B scripts/ci-connected-node-cache.py release
+      - name: Execute four source-bound production Node and complete OP client profiles
+        run: python3 -B scripts/check-connected-node.py "$RUNNER_TEMP/connected-node-check" "$RUNNER_TEMP/connected-node-cli"
+      - name: Refuse tracked source drift after the actual client cohort
+        run: |
+          git diff --exit-code
+          git -C zvm-core diff --exit-code
+
   market-browser:
-    needs: [ci-scope, go, full-client-recovery, compiler-isolation, market-browser-execution]
+    needs: [ci-scope, go, full-client-recovery, compiler-isolation, market-browser-execution, connected-node]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 3

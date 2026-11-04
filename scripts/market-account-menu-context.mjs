@@ -24,19 +24,21 @@ export function createAccountMenuContextProbe({origin, enabled, continueRequest}
     },
     intercept(request, page) {
       if (!armed || page !== armed.page || seen.has(request)) return false
-      let body
+      let body, batch
       try {
         const target = new URL(request.url()), raw = request.postData()
         if (target.origin !== base.origin || target.pathname !== '/rpc' || target.search ||
             request.method() !== 'POST' || typeof raw !== 'string' || raw.length > 4096) return false
         body = JSON.parse(raw)
+        batch = Array.isArray(body)
+        if (batch) {if (body.length !== 1) return false; body = body[0]}
         if (!body || typeof body !== 'object' || Array.isArray(body) || body.jsonrpc !== '2.0' ||
             !((Number.isSafeInteger(body.id) && body.id >= 0) || (typeof body.id === 'string' && body.id.length > 0 && body.id.length <= 128)) ||
             body.method !== 'eth_getBalance' || !Array.isArray(body.params) || body.params.length !== 2 ||
             !address(body.params[0]) || body.params[0].toLowerCase() !== armed.owner || body.params[1] !== 'latest') return false
       } catch {return false}
       const selected = armed; armed = null; holds++; seen.add(request)
-      held = {request, page, id: body.id}
+      held = {request, page, id: body.id, batch}
       selected.ready()
       return true
     },
@@ -50,12 +52,15 @@ export function createAccountMenuContextProbe({origin, enabled, continueRequest}
         await continueRequest(selected.request)
         const response = await responseReady
         assert.equal(response.request(), selected.request); assert.equal(response.status(), 200)
-        const envelope = await response.json()
+        const received = await response.json()
+        if (selected.batch) assert.ok(Array.isArray(received) && received.length === 1)
+        else assert.ok(!Array.isArray(received))
+        const envelope = selected.batch ? received[0] : received
         assert.ok(envelope && !Array.isArray(envelope) && envelope.jsonrpc === '2.0' &&
           envelope.id === selected.id && !Object.hasOwn(envelope, 'error') && quantity(envelope.result))
         assert.equal(BigInt(envelope.result), BigInt(expectedQuantity))
         releases++
-        return {actualOriginalRequestContinued: true, actualMatchedResponseAmount: BigInt(envelope.result).toString()}
+        return {actualOriginalRequestContinued: true, actualMatchedResponseAmount: BigInt(envelope.result).toString(), actualOriginalRPCBatchEntries: selected.batch ? 1 : 0}
       } catch (error) {failed = true; throw error}
     },
     assertIdle() {

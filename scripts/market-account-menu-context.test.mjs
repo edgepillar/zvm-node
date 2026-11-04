@@ -6,11 +6,14 @@ let cases = 0
 const check = async operation => {await operation(); cases++}
 const request = (overrides = {}, body = {}) => ({url: () => origin+'/rpc', method: () => 'POST',
   postData: () => JSON.stringify({jsonrpc: '2.0', id: 7, method: 'eth_getBalance', params: [owner, 'latest'], ...body}), ...overrides})
-function fixture({result = '0x0', envelope = {}, status = 200, otherRequest = false, failContinue = false} = {}) {
-  const continued = [], req = request()
+function fixture({result = '0x0', envelope = {}, status = 200, otherRequest = false, failContinue = false, batch = false, responseShape = 'auto'} = {}) {
+  const continued = [], single = request(), req = batch ? request({postData: () => JSON.stringify([JSON.parse(single.postData())])}) : single
   const page = {waitForResponse: async predicate => {
     const response = {request: () => otherRequest ? request() : req, status: () => status,
-      json: async () => ({jsonrpc: '2.0', id: 7, result, ...envelope})}
+      json: async () => {
+        const value = {jsonrpc: '2.0', id: 7, result, ...envelope}
+        return responseShape === 'two' ? [value, value] : (responseShape === 'one' || (responseShape === 'auto' && batch)) ? [value] : value
+      }}
     if (!otherRequest) assert.ok(predicate(response))
     return response
   }}
@@ -41,6 +44,7 @@ const ignored = [
   request({}, {method: 'eth_call'}), request({}, {params: [buyer, 'latest']}),
   request({}, {params: [owner, 'pending']}), request({}, {params: [owner]}), request({}, {params: [owner, 'latest', 1]}),
   request({postData() {throw new Error('unavailable metadata')}}),
+  request({postData: () => JSON.stringify([JSON.parse(request().postData()), JSON.parse(request().postData())])}),
 ]
 for (const req of ignored) await check(async () => {
   const {probe, page, req: actual, continued} = fixture(), ready = probe.arm(page, owner)
@@ -75,13 +79,29 @@ await check(async () => {
     assert.equal(probe.intercept(req, page), true); assert.equal(probe.intercept(req, page), false)
     await ready; assert.throws(() => probe.arm(page, owner))
     const actual = await probe.release(page, expectedResult)
-    assert.deepEqual(actual, {actualOriginalRequestContinued: true, actualMatchedResponseAmount: BigInt(expectedResult).toString()})
+    assert.deepEqual(actual, {actualOriginalRequestContinued: true, actualMatchedResponseAmount: BigInt(expectedResult).toString(), actualOriginalRPCBatchEntries: 0})
     assert.equal(req.postData(), raw)
     assert.equal(continued[i], req); prior = req
   }
   assert.equal(continued.length, 2); assert.notEqual(continued[0], continued[1])
   assert.deepEqual(probe.assertIdle(), {heldOriginalRequests: 2, continuedOriginalRequests: 2, replacedRequestsOrReplies: 0})
   assert.throws(() => probe.arm(page, owner))
+})
+for (const result of ['0x0', '0xde0b6b3a7640000']) await check(async () => {
+  const {probe, page, req, continued} = fixture({batch: true, result}), raw = req.postData(), ready = probe.arm(page, owner)
+  assert.equal(probe.intercept(req, page), true); await ready
+  assert.deepEqual(await probe.release(page, result), {actualOriginalRequestContinued: true,
+    actualMatchedResponseAmount: BigInt(result).toString(), actualOriginalRPCBatchEntries: 1})
+  assert.deepEqual(continued, [req]); assert.equal(req.postData(), raw)
+})
+for (const options of [{batch: true, responseShape: 'object'}, {batch: true, responseShape: 'two'},
+  {batch: true, envelope: {id: 8}}, {batch: true, envelope: {error: {code: -1}}},
+  {responseShape: 'one'}]) await check(async () => {
+  const {probe, page, req, continued} = fixture(options), ready = probe.arm(page, owner)
+  assert.equal(probe.intercept(req, page), true); await ready
+  await assert.rejects(probe.release(page, '0x0'))
+  assert.deepEqual(continued, [req]); assert.throws(() => probe.arm(page, owner))
+  await assert.rejects(probe.release(page, '0x0')); assert.equal(continued.length, 1)
 })
 console.log('ACCOUNT-MENU-CONTEXT-CONTROLS '+JSON.stringify({cases, pass: true, browserExecutions: 0,
   originalFinancialProfileChecksChanged: false, productAPIOrRPCRepliesReplaced: 0}))

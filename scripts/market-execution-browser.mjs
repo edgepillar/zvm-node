@@ -521,7 +521,6 @@ try {
   if (fixture.kind === 'single') {await navigate('/item/' + fixture.collection + '/1'); await connect()}
   record('actual production page and EIP-1193 connection')
   if (quoteProfile) await checkAccountMenuBalance({page, chain, owner: fixture.seller, source: pins['zvm-karum']})
-  if (quoteProfile) await checkAccountMenuContext({page, chain, owner: fixture.seller, buyer: fixture.buyer, source: pins['zvm-karum'], probe: accountMenuContext})
   if (fixture.kind === 'single') {
     for (const id of [1, 2]) {
       if (id === 2) {await navigate('/item/' + fixture.collection + '/2'); await connect()}
@@ -618,6 +617,7 @@ try {
   assert.ok(Number.isSafeInteger(fundedNonce) && fundedNonce >= 3)
   assert.equal(state.actor.toLowerCase(), fixture.actor.toLowerCase())
   record('real HTTP admission binds actual inputs without changing the derived prefix')
+  if (quoteProfile) await checkAccountMenuContext({page, chain, owner: fixture.seller, buyer: fixture.buyer, source: pins['zvm-karum'], probe: accountMenuContext})
   await projection('admitted', -1)
   if (fixture.action === 'buy') {
   await navigate('/item/' + fixture.collection + '/1', true)

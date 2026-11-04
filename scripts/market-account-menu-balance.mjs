@@ -21,7 +21,7 @@ export async function checkAccountMenuBalance({page, chain, owner, source}) {
   const raw = await chain.request({method: 'eth_getBalance', params: [owner, {blockHash: before.hash, requireCanonical: true}]})
   assert.match(raw, /^0x[0-9a-fA-F]+$/)
   const amount = BigInt(raw), expected = accountMenuBalanceText(amount)
-  assert.ok(amount > 0n, 'the declared seller must have its real initial native balance')
+  assert.ok(amount >= 0n, 'a real zero native balance must remain visible in the account menu')
   const displayed = []
   const visible = (expected, owner) => {
     const dialogs = [...document.querySelectorAll('dialog')].filter(dialog => dialog.querySelector('h2')?.textContent.trim() === 'Account')

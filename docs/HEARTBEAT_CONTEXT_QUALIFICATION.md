@@ -23,3 +23,9 @@ uncontrolled observation; it does not establish CPU attribution or a speedup.
 
 This is a controlled production-page and owned Node RPC test. It does not qualify
 physical wallets, public networks, authenticated NoM, release or deployment.
+
+The pinned viem 2.56.8 height action omits `params` for `eth_blockNumber`.
+The probe accepts that original no-argument shape and an explicit empty array;
+it still refuses null, nonempty parameters and multi-entry batches. The original
+HTTP envelope and matched reply continue unchanged. The initial probe failed
+before intercepting its height request; that hosted failure remains evidence.

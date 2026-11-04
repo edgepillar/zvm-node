@@ -30,7 +30,7 @@ export function createHeartbeatContextProbe({origin, enabled, continueRequest}) 
         if (batch) {if (body.length !== 1) return false; body = body[0]}
         if (!body || typeof body !== 'object' || Array.isArray(body) || body.jsonrpc !== '2.0' ||
             !((Number.isSafeInteger(body.id) && body.id >= 0) || (typeof body.id === 'string' && body.id.length > 0 && body.id.length <= 128)) ||
-            body.method !== 'eth_blockNumber' || !Array.isArray(body.params) || body.params.length !== 0) return false
+            body.method !== 'eth_blockNumber' || (Object.hasOwn(body, 'params') && (!Array.isArray(body.params) || body.params.length !== 0))) return false
       } catch {return false}
       const selected = armed; armed = null
       held = {page, request, id: body.id, batch}; holds++

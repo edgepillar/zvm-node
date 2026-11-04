@@ -5,10 +5,10 @@ import {createHeartbeatContextProbe} from './market-heartbeat-context-probe.mjs'
 const origin = 'http://127.0.0.1:49123'
 const body = {jsonrpc: '2.0', id: 7, method: 'eth_blockNumber', params: []}
 
-function fixture({batch = false, enabled = true, responsePatch = {}, status = 200, continueError} = {}) {
+function fixture({batch = false, omittedParams = false, enabled = true, responsePatch = {}, status = 200, continueError} = {}) {
   let resolve, predicate, continued = 0, waits = 0
   const responseReady = new Promise(ready => {resolve = ready})
-  const request = {url: () => origin + '/rpc', method: () => 'POST', postData: () => JSON.stringify(batch ? [body] : body)}
+  const request = {url: () => origin + '/rpc', method: () => 'POST', postData: () => {const value = {...body}; if (omittedParams) delete value.params; return JSON.stringify(batch ? [value] : value)}}
   const response = {request: () => request, status: () => status,
     json: async () => batch ? [{jsonrpc: '2.0', id: 7, result: '0x6', ...responsePatch}] : {jsonrpc: '2.0', id: 7, result: '0x6', ...responsePatch}}
   const page = {waitForResponse: (fn, options) => {assert.equal(options.timeout, 12000); predicate = fn; waits++; return responseReady}}
@@ -21,8 +21,8 @@ function fixture({batch = false, enabled = true, responsePatch = {}, status = 20
   return {probe, page, request, response, stats: () => ({continued, waits})}
 }
 
-for (const batch of [false, true]) test('preserves and joins the exact original ' + (batch ? 'one-entry batch' : 'height request'), async () => {
-  const f = fixture({batch}), ready = f.probe.arm(f.page)
+for (const batch of [false, true]) for (const omittedParams of [false, true]) test('preserves and joins the exact original ' + (batch ? 'one-entry batch' : 'height request') + (omittedParams ? ' without params' : ' with empty params'), async () => {
+  const f = fixture({batch, omittedParams}), ready = f.probe.arm(f.page)
   assert.equal(f.probe.intercept(f.request, f.page), true); await ready
   assert.equal(f.probe.intercept(f.request, f.page), false)
   assert.deepEqual(await f.probe.release(f.page, '0x6'), {actualOriginalHeightRequestContinued: true,
@@ -50,7 +50,7 @@ const refused = [
     ['a missing ID', {id: undefined}], ['a negative ID', {id: -1}], ['a boolean ID', {id: false}],
     ['an empty string ID', {id: ''}], ['an oversized string ID', {id: 'x'.repeat(129)}],
     ['another protocol', {jsonrpc: '1.0'}], ['another RPC method', {method: 'eth_chainId'}],
-    ['missing parameters', {params: undefined}], ['unexpected parameters', {params: ['latest']}],
+    ['null parameters', {params: null}], ['unexpected parameters', {params: ['latest']}],
   ].map(([name, patch]) => [name, {postData: () => JSON.stringify({...body, ...patch})}]),
 ]
 for (const [name, patch] of refused) test('does not capture ' + name, async () => {

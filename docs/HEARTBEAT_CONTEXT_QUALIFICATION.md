@@ -1,8 +1,9 @@
 # Production heartbeat context qualification
 
-The additional Karum single-order check holds one original height request after
-a real node-picker recheck. The page must have an accepted market while its
-reset heartbeat remains pending. The ordinary picker then refuses an invalid
+The additional Karum single-order check holds the next ordinary height request
+while the selected node is healthy and its displayed block matches the
+independently read canonical head. No endpoint transition is induced while
+selecting that request. The ordinary picker then refuses an invalid
 URL. Its chain, block and exchange fields must clear before that old request is
 continued once, with its actual matched Node RPC reply unchanged. The refused
 node must stay cleared, including during observed DOM mutations. Retrying the
@@ -29,3 +30,13 @@ The probe accepts that original no-argument shape and an explicit empty array;
 it still refuses null, nonempty parameters and multi-entry batches. The original
 HTTP envelope and matched reply continue unchanged. The initial probe failed
 before intercepting its height request; that hosted failure remains evidence.
+
+Version 2 of ACTUAL-HEARTBEAT-CONTEXT selects a scheduled live heartbeat,
+not a request crossing a recheck transition. The refusal, original reply,
+visible mutation, canonical restoration and financial effect predicates remain.
+
+A failed compiler group assertion additionally reports bounded parse status,
+group equality/zero, terminal state, empty-read status and observed byte count.
+No raw PIDs or process contents are reported. Its original group mismatch
+refusal, stop predicates and 300 ms observation bound are unchanged. These
+passive facts do not establish the cause or resolution of an earlier failure.

@@ -109,15 +109,18 @@ export async function checkHeartbeatContext({page, chain, source, origin, probe,
   const before = await chain.request({method: 'eth_getBlockByNumber', params: ['latest', false]})
   assert.ok(quantity(before.number)); assert.match(before.hash, /^0x[a-fA-F0-9]{64}$/)
   await page.click('[data-testid="node-picker"]')
-  await page.waitForFunction(() => [...document.querySelectorAll('dialog[open] dt')].some(label => label.textContent.trim() === 'Block'), {timeout: 12000, polling: 50})
+  await page.waitForFunction(height => [...document.querySelectorAll('dialog[open] dt')].some(label =>
+    label.textContent.trim() === 'Block' && label.parentElement.querySelector('dd')?.textContent.trim().replaceAll(',', '') === height),
+  {timeout: 12000, polling: 50}, BigInt(before.number).toString())
+  // Select the next ordinary heartbeat while this endpoint stays healthy.
+  // The pinned production heartbeat is the page's sole height-method producer.
   const selected = probe.arm(page)
-  await recheck(page)
   await bounded(selected)
   await page.waitForFunction(() => [...document.querySelectorAll('dialog[open] dd')].some(value => value.textContent.trim() === 'Reachable, market open') &&
     ![...document.querySelectorAll('dialog[open] button')].find(value => value.textContent.trim() === 'Check again')?.disabled, {timeout: 12000, polling: 50})
   const pending = await page.evaluate(pickerState)
   assert.equal(pending.status, 'Reachable, market open'); assert.ok(pending.chain && pending.exchange)
-  assert.equal(pending.block, null, 'the held request did not own the reset heartbeat')
+  assert.equal(pending.block.replaceAll(',', ''), BigInt(before.number).toString(), 'the selected live heartbeat context changed before invalidation')
   await page.$eval('#rpc-url', input => {input.value = 'http://['; input.dispatchEvent(new Event('input', {bubbles: true}))})
   await page.click('dialog[open] form button[type="submit"]')
   await page.waitForFunction(() => [...document.querySelectorAll('dialog[open]')].some(dialog => dialog.textContent.includes('That is not a URL.')), {timeout: 12000, polling: 50})
@@ -157,9 +160,9 @@ export async function checkHeartbeatContext({page, chain, source, origin, probe,
   const after = await chain.request({method: 'eth_getBlockByNumber', params: ['latest', false]})
   assert.equal(after.hash, before.hash)
   assert.deepEqual(effectCounts(), effects)
-  console.log('ACTUAL-HEARTBEAT-CONTEXT '+JSON.stringify({schema: 1, source, profile: 'karum-single',
-    canonicalBlockHash: before.hash, actualNodePickerRechecks: 2, actualInvalidURLSelections: 1,
-    actualOriginalNodeRestorations: 1, selectedHeartbeatOwnershipChecked: true,
+  console.log('ACTUAL-HEARTBEAT-CONTEXT '+JSON.stringify({schema: 2, source, profile: 'karum-single',
+    canonicalBlockHash: before.hash, actualNodePickerRechecks: 1, actualInvalidURLSelections: 1,
+    actualOriginalNodeRestorations: 1, selectedLiveHeartbeatRequestHeld: true,
     oldHeightResponseReleasedAfterInvalidSelection: true, staleBlockMutationSamples: observed.staleBlockSamples,
     actualProductionPageAndRPC: true, sameCanonicalHeadBeforeAndAfter: true, ...originalResponse, ...probe.assertIdle(),
     unchangedOriginalFinancialEffectCounts: effects,

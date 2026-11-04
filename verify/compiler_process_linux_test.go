@@ -95,6 +95,8 @@ func compilerGroupChildStopped(t *testing.T, parent, child int) {
 		}
 		state, group, err := compilerGroupStat(raw)
 		if err != nil || group != parent {
+			t.Logf("OWNED-COMPILER-GROUP-OBSERVATION parseOK=%t groupMatches=%t groupIsZero=%t terminalState=%t emptyRead=%t observedBytes=%d observationBoundMs=300 originalFailurePreserved=true",
+				err == nil, group == parent, group == 0, state == "Z" || state == "X", len(raw) == 0, len(raw))
 			t.Fatal("owned compiler child left its declared process group")
 		}
 		if state == "Z" || state == "X" {

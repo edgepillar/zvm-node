@@ -9,6 +9,7 @@ import {reportOwnedRPCProgress} from './market-rpc-progress-support.mjs'
 import {boundedNavigation} from './market-navigation-support.mjs'
 import {connectFixtureWallet} from './market-wallet-connection-support.mjs'
 import {checkAccountMenuBalance} from './market-account-menu-balance.mjs'
+import {createAccountMenuContextProbe, checkAccountMenuContext} from './market-account-menu-context.mjs'
 import {createTokenPaymentChecks} from './market-token-payment-support.mjs'
 import {createSaleProceedsChecks} from './market-sale-proceeds-support.mjs'
 import {createExternalRoyaltyChecks} from './market-external-royalty-support.mjs'
@@ -73,6 +74,8 @@ const actorSigner = fixture.action === 'buy' || batchMode ? buyerSigner : signer
 assert.equal(actorSigner.address.toLowerCase(), fixture.actor.toLowerCase())
 const targetAddress = fixture.action === 'approval' ? fixture.collection : fixture.exchange
 const quoteProfile = !tokenProfile && fixture.app === 'karum' && fixture.kind === 'single' && fixture.action === 'buy'
+const accountMenuContext = createAccountMenuContextProbe({origin: base.origin, enabled: quoteProfile,
+  continueRequest: request => observeOwnedRequestAction(request, 'CONTINUE', () => rpcCorrelation.continue(request))})
 const quoteApprovalData = encodeFunctionData({abi: parseAbi(['function isApprovedForAll(address owner, address operator) view returns (bool)']),
   functionName: 'isApprovedForAll', args: [fixture.seller, fixture.exchange]}).toLowerCase()
 let quoteArmed = false, heldQuoteRequest, quoteReady, resolveQuoteReady
@@ -461,6 +464,7 @@ async function preparePage(page) {
   page.on('request', request => {
     const target = new URL(request.url())
     if (target.protocol === 'data:' || target.origin === base.origin) {
+      if (accountMenuContext.intercept(request, page)) return
       if (quoteArmed && request.method() === 'POST' && target.pathname === '/rpc') {
         const raw = request.postData()
         if (typeof raw === 'string' && raw.length <= 256 * 1024) {
@@ -517,6 +521,7 @@ try {
   if (fixture.kind === 'single') {await navigate('/item/' + fixture.collection + '/1'); await connect()}
   record('actual production page and EIP-1193 connection')
   if (quoteProfile) await checkAccountMenuBalance({page, chain, owner: fixture.seller, source: pins['zvm-karum']})
+  if (quoteProfile) await checkAccountMenuContext({page, chain, owner: fixture.seller, buyer: fixture.buyer, source: pins['zvm-karum'], probe: accountMenuContext})
   if (fixture.kind === 'single') {
     for (const id of [1, 2]) {
       if (id === 2) {await navigate('/item/' + fixture.collection + '/2'); await connect()}

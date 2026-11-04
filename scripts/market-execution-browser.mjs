@@ -8,6 +8,7 @@ import assert from 'node:assert/strict'
 import {reportOwnedRPCProgress} from './market-rpc-progress-support.mjs'
 import {boundedNavigation} from './market-navigation-support.mjs'
 import {connectFixtureWallet} from './market-wallet-connection-support.mjs'
+import {checkAccountMenuBalance} from './market-account-menu-balance.mjs'
 import {createTokenPaymentChecks} from './market-token-payment-support.mjs'
 import {createSaleProceedsChecks} from './market-sale-proceeds-support.mjs'
 import {createExternalRoyaltyChecks} from './market-external-royalty-support.mjs'
@@ -515,6 +516,7 @@ try {
   record('actual zero exchange credit is read and cannot open a withdrawal request')
   if (fixture.kind === 'single') {await navigate('/item/' + fixture.collection + '/1'); await connect()}
   record('actual production page and EIP-1193 connection')
+  if (quoteProfile) await checkAccountMenuBalance({page, chain, owner: fixture.seller, source: pins['zvm-karum']})
   if (fixture.kind === 'single') {
     for (const id of [1, 2]) {
       if (id === 2) {await navigate('/item/' + fixture.collection + '/2'); await connect()}

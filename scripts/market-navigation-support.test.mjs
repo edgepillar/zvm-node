@@ -255,3 +255,5 @@ import './market-request-action-support.test.mjs'
 import './market-request-handling-support.test.mjs'
 
 import './market-rpc-correlation-support.test.mjs'
+
+import './market-account-menu-balance.test.mjs'

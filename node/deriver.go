@@ -22,6 +22,7 @@ import (
 
 	"github.com/Zenoglyphs-VM/zvm-core/derive"
 	"github.com/Zenoglyphs-VM/zvm-core/l2"
+	"github.com/Zenoglyphs-VM/zvm-core/release"
 	"github.com/Zenoglyphs-VM/zvm-core/rollup"
 	"github.com/Zenoglyphs-VM/zvm-core/store"
 	"github.com/Zenoglyphs-VM/zvm-core/znn"
@@ -29,12 +30,15 @@ import (
 
 // Deriver follows NoM and drives op-geth.
 type Deriver struct {
-	Cfg    *rollup.Config
-	L1     *znn.Client
-	Engine *l2.Engine
-	Eth    *ethclient.Client
-	DB     *store.DB
-	Log    *slog.Logger
+	Cfg *rollup.Config
+	// Protocol is accepted from independent signed release inputs at startup.
+	// Nil preserves legacy mode and explicitly reports enforcement as disabled.
+	Protocol *release.ProtocolGuard
+	L1       *znn.Client
+	Engine   *l2.Engine
+	Eth      *ethclient.Client
+	DB       *store.DB
+	Log      *slog.Logger
 
 	// Confirmations is how far behind the NoM frontier to derive. NoM does not
 	// reorg in normal operation, so 0 (derive at the tip) is the default.
@@ -55,8 +59,9 @@ type Deriver struct {
 
 	chainCfg *params.ChainConfig
 
-	mu   sync.RWMutex
-	head store.Head
+	mu              sync.RWMutex
+	head            store.Head
+	protocolFailure *protocolFailure
 
 	l1Frontier atomic.Uint64
 	// lastProgress is when the head last moved, as unix nanoseconds.
@@ -88,7 +93,8 @@ type Status struct {
 	// that stopped.
 	Stalled bool `json:"stalled"`
 	// SinceProgressMS is how long ago the head last moved.
-	SinceProgressMS int64 `json:"sinceProgressMs"`
+	SinceProgressMS int64          `json:"sinceProgressMs"`
+	Protocol        ProtocolStatus `json:"protocol"`
 }
 
 func (d *Deriver) Status() Status {
@@ -105,6 +111,7 @@ func (d *Deriver) Status() Status {
 	since := time.Since(d.progressedAt())
 	s.SinceProgressMS = since.Milliseconds()
 	s.Stalled = s.LagMomentums > 0 && since > d.stallAfter()
+	s.Protocol = d.protocolStatus(h.Height, s.L1Frontier)
 	return s
 }
 
@@ -133,6 +140,9 @@ func (d *Deriver) markProgress() { d.lastProgress.Store(time.Now().UnixNano()) }
 // Init checks the engine against the rollup config and reconciles the store
 // with the engine's head, so a restart resumes where the chain actually is.
 func (d *Deriver) Init(ctx context.Context) error {
+	if err := d.checkStoredProtocol(); err != nil {
+		return err
+	}
 	d.chainCfg = l2.ChainConfig(d.Cfg)
 	genesis, err := d.Eth.HeaderByNumber(ctx, big.NewInt(0))
 	if err != nil {
@@ -157,6 +167,9 @@ func (d *Deriver) Init(ctx context.Context) error {
 // NoM. So the engine answers every forkchoice with SYNCING, forever, and
 // without this the node retries forever against a head that will never arrive.
 func (d *Deriver) reconcileWithEngine(ctx context.Context, genesis *types.Header) error {
+	if err := d.checkStoredProtocol(); err != nil {
+		return err
+	}
 	if genesis == nil {
 		var err error
 		genesis, err = d.Eth.HeaderByNumber(ctx, big.NewInt(0))
@@ -166,6 +179,9 @@ func (d *Deriver) reconcileWithEngine(ctx context.Context, genesis *types.Header
 	}
 	gethHead, err := d.Eth.HeaderByNumber(ctx, nil)
 	if err != nil {
+		return err
+	}
+	if err := d.checkEngineProtocol(gethHead.Number); err != nil {
 		return err
 	}
 
@@ -324,6 +340,9 @@ func (d *Deriver) Run(ctx context.Context) error {
 }
 
 func (d *Deriver) step(ctx context.Context) (bool, error) {
+	if err := d.checkProtocol(d.Head().Height); err != nil {
+		return false, err
+	}
 	frontier, err := d.L1.FrontierMomentum(ctx)
 	if err != nil {
 		return false, err
@@ -361,6 +380,9 @@ func (d *Deriver) step(ctx context.Context) (bool, error) {
 // reorg rewinds to the newest momentum the store and NoM still agree on.
 func (d *Deriver) reorg(ctx context.Context) error {
 	head := d.Head()
+	if err := d.checkProtocol(head.Height); err != nil {
+		return err
+	}
 	for h := head.Height; h >= d.Cfg.L1StartHeight; h-- {
 		row, err := d.DB.MomentumHead(h)
 		if err != nil {
@@ -404,6 +426,12 @@ func (d *Deriver) finalizedHash(height uint64) common.Hash {
 }
 
 func (d *Deriver) deriveOne(ctx context.Context, dm *znn.DetailedMomentum) error {
+	if dm == nil || dm.Momentum == nil {
+		return errors.New("missing momentum for derivation")
+	}
+	if err := d.checkProtocol(dm.Momentum.Height); err != nil {
+		return err
+	}
 	started := time.Now()
 	head := d.Head()
 	plan, err := derive.BuildPlan(d.Cfg, dm, d.DB)

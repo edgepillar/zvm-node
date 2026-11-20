@@ -32,6 +32,7 @@ import (
 
 	"github.com/Zenoglyphs-VM/zvm-core/derive"
 	"github.com/Zenoglyphs-VM/zvm-core/l2"
+	"github.com/Zenoglyphs-VM/zvm-core/release"
 	"github.com/Zenoglyphs-VM/zvm-core/rollup"
 	"github.com/Zenoglyphs-VM/zvm-core/store"
 	"github.com/Zenoglyphs-VM/zvm-core/znn"
@@ -40,7 +41,10 @@ import (
 )
 
 type Config struct {
-	Rollup  *rollup.Config
+	Rollup *rollup.Config
+	// Release is an optional owner-signed declaration already bound to the
+	// startup rollup snapshot. It is not a running-image or consensus proof.
+	Release *release.Assertion
 	DB      *store.DB
 	Eth     *ethclient.Client
 	L1      *znn.Client
@@ -110,6 +114,7 @@ func New(cfg Config) *Server {
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/info", s.handle(s.info))
+	mux.Handle("GET /api/release", releaseHandler(s.cfg.Release))
 	// A readiness probe: 200 while this node is keeping up, 503 once it is
 	// stalled. Derivation retries forever rather than exiting (docs/HALT.md),
 	// so without this a halted node passes every health check and goes on
@@ -688,11 +693,12 @@ func intParam(r *http.Request, name string, def, maxV int) int {
 func (s *Server) healthz(w http.ResponseWriter, _ *http.Request) {
 	st := s.cfg.Deriver.Status()
 	w.Header().Set("Content-Type", "application/json")
-	if st.Stalled {
+	if st.Stalled || st.Protocol.Blocked {
 		w.WriteHeader(http.StatusServiceUnavailable)
 	}
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"ok":              !st.Stalled,
+		"ok":              !st.Stalled && !st.Protocol.Blocked,
+		"protocol":        st.Protocol,
 		"stalled":         st.Stalled,
 		"lagMomentums":    st.LagMomentums,
 		"sinceProgressMs": st.SinceProgressMS,
@@ -758,6 +764,8 @@ func (s *Server) info(ctx context.Context, _ *http.Request) (any, error) {
 			out[k] = v
 		}
 	}
+	// Extensions cannot replace the accepted protocol state or a safety hold.
+	out["protocol"] = st.Protocol
 	if h, err := s.cfg.Eth.HeaderByNumber(ctx, nil); err == nil {
 		out["l2"].(map[string]any)["baseFee"] = h.BaseFee.String()
 		out["l2"].(map[string]any)["timestamp"] = h.Time

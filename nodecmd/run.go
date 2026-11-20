@@ -23,7 +23,6 @@ import (
 
 	"github.com/Zenoglyphs-VM/zvm-core/ethrpc"
 	"github.com/Zenoglyphs-VM/zvm-core/l2"
-	"github.com/Zenoglyphs-VM/zvm-core/rollup"
 	"github.com/Zenoglyphs-VM/zvm-core/service"
 	"github.com/Zenoglyphs-VM/zvm-core/store"
 	"github.com/Zenoglyphs-VM/zvm-core/znn"
@@ -36,6 +35,11 @@ import (
 func Run(args []string, ext ...Extender) error {
 	fs := flag.NewFlagSet("node", flag.ExitOnError)
 	configPath := fs.String("config", "/config/rollup.json", "rollup config")
+	releaseManifest := fs.String("release-manifest", "", "owner-signed public release manifest (requires all four release inputs)")
+	releasePolicy := fs.String("release-policy", "", "independently reviewed release inventory and signature quorum")
+	releaseSignatures := fs.String("release-signatures", "", "detached Ed25519 release signatures")
+	releaseKeys := fs.String("release-trusted-keys", "", "independently provisioned release public keys")
+	protocolPolicy := fs.String("protocol-policy", "", "release-pinned protocol activation stop policy; requires all four release inputs")
 	jwtPath := fs.String("jwt", "/config/jwt.hex", "Engine API secret")
 	l1URL := fs.String("l1", "http://l1-rpc:35997", "NoM node JSON-RPC")
 	engineURL := fs.String("engine", "http://op-geth:8551", "op-geth Engine API")
@@ -83,7 +87,7 @@ func Run(args []string, ext ...Extender) error {
 		mainnet = znn.NewClient(*mainnetRPC)
 	}
 
-	cfg, err := rollup.Load(*configPath)
+	cfg, assertion, protocol, err := loadProtocolConfiguration(*configPath, [4]string{*releaseManifest, *releasePolicy, *releaseSignatures, *releaseKeys}, *protocolPolicy)
 	if err != nil {
 		return err
 	}
@@ -120,7 +124,7 @@ func Run(args []string, ext ...Extender) error {
 
 	l1 := znn.NewClient(*l1URL)
 	d := &node.Deriver{
-		Cfg: cfg, L1: l1, Engine: eng, Eth: eth, DB: db,
+		Cfg: cfg, Protocol: protocol, L1: l1, Engine: eng, Eth: eth, DB: db,
 		Log: slog.Default().With("svc", "deriver"), Confirmations: *confirmations,
 		StallAfter: *stallAfter,
 	}
@@ -130,6 +134,7 @@ func Run(args []string, ext ...Extender) error {
 	var plugins []indexer.Plugin
 	var extensions []api.Extension
 	var rewinds []func(uint64)
+	var followIndex func()
 	for _, e := range ext {
 		r, err := e.Build(ctx, Env{Rollup: cfg, DB: db, Eth: eth, L1: l1, Dex: *dexPath, Log: slog.Default()})
 		if err != nil {
@@ -161,7 +166,9 @@ func Run(args []string, ext ...Extender) error {
 				slog.Error("rewinding the index", "err", err)
 			}
 		}
-		go ix.Follow(ctx, func() uint64 { return d.Head().L2Number })
+		// The follower can repair and rewind an existing index. Keep it idle
+		// until Init accepts both persisted and execution-client protocol heads.
+		followIndex = func() { ix.Follow(ctx, func() uint64 { return d.Head().L2Number }) }
 
 		var verifier *verify.Service
 		if *verifyOn {
@@ -194,7 +201,7 @@ func Run(args []string, ext ...Extender) error {
 
 		if *listen != "" {
 			srv := api.New(api.Config{
-				Rollup: cfg, DB: db, Eth: eth, L1: l1, Deriver: d,
+				Rollup: cfg, Release: assertion, DB: db, Eth: eth, L1: l1, Deriver: d,
 				EthURL: *ethURL, L1URL: *l1URL, Faucet: *faucetURL, Bridge: *bridgeURL, Relayer: *relayerURL, Dex: *dexPath, RPCDeny: splitList(*rpcDeny),
 				L1Explorer: l1ExplorerFor(*l1Explorer, cfg.L1ChainID),
 				Verify:     verifier,
@@ -233,6 +240,9 @@ func Run(args []string, ext ...Extender) error {
 
 	if _, err := service.WaitFor(ctx, "L1 node", func() (struct{}, error) { return struct{}{}, d.Init(ctx) }); err != nil {
 		return err
+	}
+	if followIndex != nil {
+		go followIndex()
 	}
 	return d.Run(ctx)
 }
